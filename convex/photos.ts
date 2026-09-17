@@ -15,6 +15,15 @@ export const add = mutation({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, { storageId }) => {
     const { profile } = await requireProfile(ctx);
+    // Storage IDs are opaque, but never let one blob be claimed by two photo rows: the
+    // second owner could otherwise delete the first owner's file through `remove`.
+    const blob = await ctx.storage.getMetadata(storageId);
+    if (!blob) throw new Error('Upload not found');
+    const claimed = await ctx.db
+      .query('photos')
+      .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+      .first();
+    if (claimed) throw new Error('Upload already attached to a photo');
     const existing = await ctx.db
       .query('photos')
       .withIndex('by_profile', (q) => q.eq('profileId', profile._id))

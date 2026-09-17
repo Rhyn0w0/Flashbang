@@ -37,7 +37,9 @@ export default defineSchema({
     profileId: v.id('profiles'),
     storageId: v.id('_storage'),
     order: v.number(),
-  }).index('by_profile', ['profileId', 'order']),
+  })
+    .index('by_profile', ['profileId', 'order'])
+    .index('by_storage', ['storageId']),
 
   // The core interaction. Private to the author; never exposed to the target.
   comments: defineTable({

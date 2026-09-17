@@ -34,19 +34,19 @@ export const next = query({
       };
     }
 
-    const commented = new Set(
-      (
-        await ctx.db
-          .query('comments')
-          .withIndex('by_author', (q) => q.eq('authorId', user._id))
-          .collect()
-      ).map((c) => c.targetProfileId)
-    );
-    // Walk active profiles lazily until one qualifies; stops at the first hit.
+    // Walk active profiles lazily until one the user has not commented on turns up.
+    // One indexed lookup per candidate keeps reads bounded by the scan, not by history.
     for await (const candidate of ctx.db
       .query('profiles')
       .withIndex('by_active', (q) => q.eq('active', true))) {
-      if (candidate.userId === user._id || commented.has(candidate._id)) continue;
+      if (candidate.userId === user._id) continue;
+      const commented = await ctx.db
+        .query('comments')
+        .withIndex('by_author_target', (q) =>
+          q.eq('authorId', user._id).eq('targetProfileId', candidate._id)
+        )
+        .first();
+      if (commented) continue;
       return { pick: null, profile: await publicProfile(ctx, candidate) };
     }
     return null;
