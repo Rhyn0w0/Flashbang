@@ -38,10 +38,10 @@ export const run = internalAction({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }) => {
     // Runs are scheduled with a delay, so several comments in a row collapse into one
-    // rebuild: any run that sees no new comments since the last rebuild exits early.
-    const totalComments = await ctx.runQuery(internal.comments.countByAuthor, { authorId: userId });
-    const existingTaste = await ctx.runQuery(internal.picks.getTaste, { userId });
-    if (totalComments === 0 || existingTaste?.commentCount === totalComments) return;
+    // rebuild: the claim is granted to exactly one run per comment-count revision. Comments
+    // that land while this run is in flight have already scheduled their own run.
+    const totalComments = await ctx.runMutation(internal.picks.claimRefine, { userId });
+    if (totalComments === null) return;
 
     const history = await ctx.runQuery(internal.comments.recentByAuthor, {
       authorId: userId,

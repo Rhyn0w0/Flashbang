@@ -39,6 +39,13 @@ export const create = mutation({
       body,
     });
 
+    const stats = await ctx.db
+      .query('authorStats')
+      .withIndex('by_user', (q) => q.eq('userId', user._id))
+      .unique();
+    if (stats) await ctx.db.patch(stats._id, { commentCount: stats.commentCount + 1 });
+    else await ctx.db.insert('authorStats', { userId: user._id, commentCount: 1 });
+
     // Mark the pick as seen so Discover moves on.
     const pick = await ctx.db
       .query('picks')
@@ -110,17 +117,6 @@ export const recentByAuthor = internalQuery({
         };
       })
     );
-  },
-});
-
-export const countByAuthor = internalQuery({
-  args: { authorId: v.id('users') },
-  handler: async (ctx, { authorId }) => {
-    const rows = await ctx.db
-      .query('comments')
-      .withIndex('by_author', (q) => q.eq('authorId', authorId))
-      .collect();
-    return rows.length;
   },
 });
 

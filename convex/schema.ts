@@ -55,6 +55,15 @@ export default defineSchema({
     .index('by_target', ['targetProfileId'])
     .index('by_photo', ['photoId']),
 
+  // Per-author counters. commentCount is bumped on every comment so refinePicks never has
+  // to scan the comments table; the claim fields let exactly one refine run own a revision.
+  authorStats: defineTable({
+    userId: v.id('users'),
+    commentCount: v.number(),
+    refineClaimedCount: v.optional(v.number()),
+    refineClaimedAt: v.optional(v.number()),
+  }).index('by_user', ['userId']),
+
   // What the model currently believes a user is looking for. Rebuilt from their comments.
   tastes: defineTable({
     userId: v.id('users'),

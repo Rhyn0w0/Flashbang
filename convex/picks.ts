@@ -1,10 +1,12 @@
 import { v } from 'convex/values';
 
-import { internalMutation, internalQuery, query } from './_generated/server';
+import { internalMutation, query } from './_generated/server';
 import { currentUser, requireUser } from './lib/auth';
 import { publicProfile } from './profiles';
 
 const LIKELY_MATCH_THRESHOLD = 0.6;
+// A refine claim older than this is assumed to have crashed and may be taken over.
+const REFINE_CLAIM_TTL_MS = 10 * 60_000;
 
 /**
  * The next profile to show on Discover. Prefers the highest-scored unseen pick;
@@ -82,13 +84,36 @@ export const taste = query({
   },
 });
 
-export const getTaste = internalQuery({
+/**
+ * Atomically claim the right to rebuild picks for the author's current comment count.
+ * Returns the count to build from, or null when there is nothing new, another run already
+ * owns this revision, or the stored taste is already up to date. Several delayed refine
+ * runs can be queued for the same burst of comments; only the first one past this gate
+ * spends money on the model.
+ */
+export const claimRefine = internalMutation({
   args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) =>
-    ctx.db
+  handler: async (ctx, { userId }) => {
+    const stats = await ctx.db
+      .query('authorStats')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique();
+    if (!stats || stats.commentCount === 0) return null;
+    const count = stats.commentCount;
+    const taste = await ctx.db
       .query('tastes')
       .withIndex('by_user', (q) => q.eq('userId', userId))
-      .unique(),
+      .unique();
+    if (taste && taste.commentCount >= count) return null;
+    const now = Date.now();
+    const claimed =
+      stats.refineClaimedCount === count &&
+      stats.refineClaimedAt !== undefined &&
+      now - stats.refineClaimedAt < REFINE_CLAIM_TTL_MS;
+    if (claimed) return null;
+    await ctx.db.patch(stats._id, { refineClaimedCount: count, refineClaimedAt: now });
+    return count;
+  },
 });
 
 /**
