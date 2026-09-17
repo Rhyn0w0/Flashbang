@@ -21,10 +21,9 @@ export const run = internalAction({
     const counts = await ctx.runQuery(internal.sentiment.countsForPhoto, { photoId });
     if (!counts) return;
 
-    const total = counts.overall.positive + counts.overall.neutral + counts.overall.negative;
     let summary = 'No feedback yet.';
 
-    if (total > 0) {
+    if (counts.commentCount > 0) {
       const { output } = await generateText({
         model,
         providerOptions,
@@ -50,6 +49,7 @@ export const run = internalAction({
       overall: counts.overall,
       fromLikelyMatches: counts.fromLikelyMatches,
       summary,
+      commentCount: counts.commentCount,
     });
   },
 });

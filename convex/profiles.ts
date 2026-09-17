@@ -3,6 +3,7 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalQuery, mutation, query, type QueryCtx } from './_generated/server';
 import { currentUser, requireUser } from './lib/auth';
+import { MAX_AGE, MIN_AGE } from './lib/profileRules';
 
 /** Shape of a profile as seen by other users. Never includes userId. */
 export async function publicProfile(ctx: QueryCtx, profile: Doc<'profiles'>) {
@@ -48,15 +49,22 @@ export const upsertMine = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
+    // The form validates too, but this mutation is public, so enforce the invariants here.
+    const displayName = args.displayName.trim();
+    if (!displayName) throw new Error('Name is required');
+    if (!Number.isInteger(args.age) || args.age < MIN_AGE || args.age > MAX_AGE) {
+      throw new Error(`Age must be a whole number between ${MIN_AGE} and ${MAX_AGE}`);
+    }
+    const fields = { ...args, displayName, city: args.city?.trim() || undefined };
     const existing = await ctx.db
       .query('profiles')
       .withIndex('by_user', (q) => q.eq('userId', user._id))
       .unique();
     if (existing) {
-      await ctx.db.patch(existing._id, args);
+      await ctx.db.patch(existing._id, fields);
       return existing._id;
     }
-    return ctx.db.insert('profiles', { ...args, userId: user._id, active: true });
+    return ctx.db.insert('profiles', { ...fields, userId: user._id, active: true });
   },
 });
 

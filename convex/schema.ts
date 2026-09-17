@@ -60,6 +60,8 @@ export default defineSchema({
   authorStats: defineTable({
     userId: v.id('users'),
     commentCount: v.number(),
+    // Set once a refine run has replaced the picks for that comment count.
+    refinedCount: v.optional(v.number()),
     refineClaimedCount: v.optional(v.number()),
     refineClaimedAt: v.optional(v.number()),
   }).index('by_user', ['userId']),
@@ -92,6 +94,9 @@ export default defineSchema({
     overall: sentimentCounts,
     fromLikelyMatches: sentimentCounts,
     summary: v.string(),
+    // Number of analysed comments the aggregate was built from; guards against
+    // an older snapshot overwriting a newer one.
+    commentCount: v.number(),
     updatedAt: v.number(),
   })
     .index('by_photo', ['photoId'])

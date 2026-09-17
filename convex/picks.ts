@@ -42,13 +42,14 @@ export const next = query({
           .collect()
       ).map((c) => c.targetProfileId)
     );
-    const active = await ctx.db
+    // Walk active profiles lazily until one qualifies; stops at the first hit.
+    for await (const candidate of ctx.db
       .query('profiles')
-      .withIndex('by_active', (q) => q.eq('active', true))
-      .take(50);
-    const fallback = active.find((p) => p.userId !== user._id && !commented.has(p._id));
-    if (!fallback) return null;
-    return { pick: null, profile: await publicProfile(ctx, fallback) };
+      .withIndex('by_active', (q) => q.eq('active', true))) {
+      if (candidate.userId === user._id || commented.has(candidate._id)) continue;
+      return { pick: null, profile: await publicProfile(ctx, candidate) };
+    }
+    return null;
   },
 });
 
@@ -87,7 +88,7 @@ export const taste = query({
 /**
  * Atomically claim the right to rebuild picks for the author's current comment count.
  * Returns the count to build from, or null when there is nothing new, another run already
- * owns this revision, or the stored taste is already up to date. Several delayed refine
+ * owns this revision, or picks were already rebuilt for this count. Several delayed refine
  * runs can be queued for the same burst of comments; only the first one past this gate
  * spends money on the model.
  */
@@ -100,11 +101,9 @@ export const claimRefine = internalMutation({
       .unique();
     if (!stats || stats.commentCount === 0) return null;
     const count = stats.commentCount;
-    const taste = await ctx.db
-      .query('tastes')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .unique();
-    if (taste && taste.commentCount >= count) return null;
+    // refinedCount is only set once picks were replaced, so a run that saved its taste
+    // but failed before ranking is retried by the next run rather than skipped.
+    if ((stats.refinedCount ?? 0) >= count) return null;
     const now = Date.now();
     const claimed =
       stats.refineClaimedCount === count &&
@@ -146,6 +145,13 @@ export const replaceAll = internalMutation({
         ctx.db.insert('picks', { userId, ...p, seenAt: seen.get(p.profileId) ?? undefined })
       )
     );
+    const stats = await ctx.db
+      .query('authorStats')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique();
+    if (stats && (stats.refinedCount ?? 0) < commentCount) {
+      await ctx.db.patch(stats._id, { refinedCount: commentCount });
+    }
   },
 });
 

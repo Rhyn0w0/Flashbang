@@ -14,6 +14,7 @@ import type * as ai_refinePicks from "../ai/refinePicks.js";
 import type * as ai_summarizePhoto from "../ai/summarizePhoto.js";
 import type * as comments from "../comments.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_profileRules from "../lib/profileRules.js";
 import type * as photos from "../photos.js";
 import type * as picks from "../picks.js";
 import type * as profiles from "../profiles.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   "ai/summarizePhoto": typeof ai_summarizePhoto;
   comments: typeof comments;
   "lib/auth": typeof lib_auth;
+  "lib/profileRules": typeof lib_profileRules;
   photos: typeof photos;
   picks: typeof picks;
   profiles: typeof profiles;

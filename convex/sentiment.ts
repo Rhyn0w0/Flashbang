@@ -75,7 +75,8 @@ export const countsForPhoto = internalQuery({
       .slice(0, 8)
       .map(([tag]) => tag);
 
-    return { profileId: photo.profileId, overall, fromLikelyMatches, topTags };
+    const commentCount = overall.positive + overall.neutral + overall.negative;
+    return { profileId: photo.profileId, overall, fromLikelyMatches, topTags, commentCount };
   },
 });
 
@@ -86,12 +87,15 @@ export const save = internalMutation({
     overall: sentimentCounts,
     fromLikelyMatches: sentimentCounts,
     summary: v.string(),
+    commentCount: v.number(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query('photoSentiment')
       .withIndex('by_photo', (q) => q.eq('photoId', args.photoId))
       .unique();
+    // Several analyses can be in flight for one photo; never let an older snapshot win.
+    if (existing && existing.commentCount > args.commentCount) return;
     const row = { ...args, updatedAt: Date.now() };
     if (existing) await ctx.db.patch(existing._id, row);
     else await ctx.db.insert('photoSentiment', row);

@@ -13,6 +13,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import type { Doc } from '@/convex/_generated/dataModel';
+import { MIN_AGE } from '@/convex/lib/profileRules';
 
 /** Own profile: details, photos, and the sentiment summary for each photo. */
 export default function MeScreen() {
@@ -49,8 +50,8 @@ function ProfileForm({ profile }: { profile: Doc<'profiles'> | null }) {
 
   const save = async () => {
     const parsedAge = Number(age);
-    if (!displayName.trim() || !Number.isInteger(parsedAge) || parsedAge <= 0) {
-      setError(new Error('Name and a whole-number age are required'));
+    if (!displayName.trim() || !Number.isInteger(parsedAge) || parsedAge < MIN_AGE) {
+      setError(new Error(`Name and a whole-number age (${MIN_AGE}+) are required`));
       return;
     }
     setSaving(true);

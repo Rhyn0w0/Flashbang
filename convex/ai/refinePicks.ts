@@ -1,4 +1,5 @@
 import { Output, generateText } from 'ai';
+import type { FunctionReturnType } from 'convex/server';
 import { v } from 'convex/values';
 import { z } from 'zod';
 
@@ -78,35 +79,9 @@ export const run = internalAction({
       forUserId: userId,
       limit: CANDIDATE_POOL,
     });
-    if (candidates.length === 0) return;
-
-    const { output: ranked } = await generateText({
-      model,
-      providerOptions,
-      output: Output.object({ schema: picksSchema }),
-      system: [
-        'You rank dating profiles for one user given a description of their taste.',
-        `Return at most ${MAX_PICKS} candidates by index, each with a 0-1 score and a one-line`,
-        'reason written to the user ("You tend to like..."). Skip weak fits entirely.',
-      ].join(' '),
-      prompt: JSON.stringify({
-        taste,
-        candidates: candidates.map((c, index) => ({
-          index,
-          age: c.age,
-          city: c.city,
-          bio: c.bio,
-        })),
-      }),
-    });
-
-    // The model may repeat an index; keep the first occurrence so each profile has one pick row.
-    const seenIndexes = new Set<number>();
-    const picks = ranked.picks
-      .filter(
-        (p) => p.index < candidates.length && !seenIndexes.has(p.index) && seenIndexes.add(p.index)
-      )
-      .map((p) => ({ profileId: candidates[p.index]._id, score: p.score, reason: p.reason }));
+    // With no candidates the pick set is replaced with nothing, which still marks this
+    // revision as refined so the next run does not redo the taste call.
+    const picks = candidates.length === 0 ? [] : await rankCandidates(taste, candidates);
 
     await ctx.runMutation(internal.picks.replaceAll, {
       userId,
@@ -115,3 +90,36 @@ export const run = internalAction({
     });
   },
 });
+
+async function rankCandidates(
+  taste: z.infer<typeof tasteSchema>,
+  candidates: FunctionReturnType<typeof internal.profiles.listCandidates>
+) {
+  const { output: ranked } = await generateText({
+    model,
+    providerOptions,
+    output: Output.object({ schema: picksSchema }),
+    system: [
+      'You rank dating profiles for one user given a description of their taste.',
+      `Return at most ${MAX_PICKS} candidates by index, each with a 0-1 score and a one-line`,
+      'reason written to the user ("You tend to like..."). Skip weak fits entirely.',
+    ].join(' '),
+    prompt: JSON.stringify({
+      taste,
+      candidates: candidates.map((c, index) => ({
+        index,
+        age: c.age,
+        city: c.city,
+        bio: c.bio,
+      })),
+    }),
+  });
+
+  // The model may repeat an index; keep the first occurrence so each profile has one pick row.
+  const seenIndexes = new Set<number>();
+  return ranked.picks
+    .filter(
+      (p) => p.index < candidates.length && !seenIndexes.has(p.index) && seenIndexes.add(p.index)
+    )
+    .map((p) => ({ profileId: candidates[p.index]._id, score: p.score, reason: p.reason }));
+}
