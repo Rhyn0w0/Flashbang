@@ -22,15 +22,14 @@ export const next = query({
       .withIndex('by_user_score', (q) => q.eq('userId', user._id))
       .order('desc')
       .take(20);
-    const unseen = picks.find((p) => !p.seenAt);
-    if (unseen) {
-      const profile = await ctx.db.get(unseen.profileId);
-      if (profile && profile.active) {
-        return {
-          pick: { score: unseen.score, reason: unseen.reason },
-          profile: await publicProfile(ctx, profile),
-        };
-      }
+    for (const pick of picks) {
+      if (pick.seenAt) continue;
+      const profile = await ctx.db.get(pick.profileId);
+      if (!profile || !profile.active) continue;
+      return {
+        pick: { score: pick.score, reason: pick.reason },
+        profile: await publicProfile(ctx, profile),
+      };
     }
 
     const commented = new Set(
@@ -92,15 +91,25 @@ export const getTaste = internalQuery({
       .unique(),
 });
 
-/** Replace a user's pick set. Keeps seenAt for profiles that were already shown. */
+/**
+ * Replace a user's pick set. Keeps seenAt for profiles that were already shown.
+ * `commentCount` is the history size the picks were computed from; a run based on
+ * fewer comments than the stored taste is stale and is dropped.
+ */
 export const replaceAll = internalMutation({
   args: {
     userId: v.id('users'),
+    commentCount: v.number(),
     picks: v.array(
       v.object({ profileId: v.id('profiles'), score: v.number(), reason: v.string() })
     ),
   },
-  handler: async (ctx, { userId, picks }) => {
+  handler: async (ctx, { userId, commentCount, picks }) => {
+    const taste = await ctx.db
+      .query('tastes')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique();
+    if (taste && taste.commentCount > commentCount) return;
     const existing = await ctx.db
       .query('picks')
       .withIndex('by_user_score', (q) => q.eq('userId', userId))
@@ -128,6 +137,8 @@ export const saveTaste = internalMutation({
       .query('tastes')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .unique();
+    // Ignore a result computed from an older history than what is already stored.
+    if (existing && existing.commentCount > args.commentCount) return;
     const row = { ...args, updatedAt: Date.now() };
     if (existing) await ctx.db.patch(existing._id, row);
     else await ctx.db.insert('tastes', row);

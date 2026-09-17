@@ -108,6 +108,10 @@ export const run = internalAction({
       )
       .map((p) => ({ profileId: candidates[p.index]._id, score: p.score, reason: p.reason }));
 
-    await ctx.runMutation(internal.picks.replaceAll, { userId, picks });
+    await ctx.runMutation(internal.picks.replaceAll, {
+      userId,
+      commentCount: totalComments,
+      picks,
+    });
   },
 });

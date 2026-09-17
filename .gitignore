@@ -45,6 +45,6 @@ example
 # Vercel
 .vercel/
 
-# local env
-.env
-.env.local
+# local env (keep only the template)
+.env*
+!.env.example

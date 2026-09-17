@@ -1,5 +1,7 @@
 import { v } from 'convex/values';
 
+import type { Id } from './_generated/dataModel';
+
 import { internalMutation, internalQuery, query } from './_generated/server';
 import { requireProfile } from './lib/auth';
 import { LIKELY_MATCH_THRESHOLD } from './picks';
@@ -39,23 +41,33 @@ export const countsForPhoto = internalQuery({
     const fromLikelyMatches = { positive: 0, neutral: 0, negative: 0 };
     const tagCounts = new Map<string, number>();
 
+    // Resolve "is this author a likely match for the owner" once per distinct author.
+    const likelyByAuthor = new Map<Id<'users'>, boolean>();
+    const isLikelyMatch = async (authorId: Id<'users'>) => {
+      const cached = likelyByAuthor.get(authorId);
+      if (cached !== undefined) return cached;
+      const authorProfile = await ctx.db
+        .query('profiles')
+        .withIndex('by_user', (q) => q.eq('userId', authorId))
+        .unique();
+      const pick = authorProfile
+        ? await ctx.db
+            .query('picks')
+            .withIndex('by_user_profile', (q) =>
+              q.eq('userId', ownerProfile.userId).eq('profileId', authorProfile._id)
+            )
+            .unique()
+        : null;
+      const likely = !!pick && pick.score >= LIKELY_MATCH_THRESHOLD;
+      likelyByAuthor.set(authorId, likely);
+      return likely;
+    };
+
     for (const c of comments) {
       if (!c.sentiment) continue;
       overall[c.sentiment] += 1;
       for (const t of c.tags ?? []) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
-
-      const authorProfile = await ctx.db
-        .query('profiles')
-        .withIndex('by_user', (q) => q.eq('userId', c.authorId))
-        .unique();
-      if (!authorProfile) continue;
-      const pick = await ctx.db
-        .query('picks')
-        .withIndex('by_user_profile', (q) =>
-          q.eq('userId', ownerProfile.userId).eq('profileId', authorProfile._id)
-        )
-        .unique();
-      if (pick && pick.score >= LIKELY_MATCH_THRESHOLD) fromLikelyMatches[c.sentiment] += 1;
+      if (await isLikelyMatch(c.authorId)) fromLikelyMatches[c.sentiment] += 1;
     }
 
     const topTags = [...tagCounts.entries()]

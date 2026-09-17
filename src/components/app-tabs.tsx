@@ -12,7 +12,7 @@ export default function AppTabs() {
       backgroundColor={colors.background}
       indicatorColor={colors.backgroundElement}
       labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
+      <NativeTabs.Trigger name="index" disableAutomaticContentInsets>
         <NativeTabs.Trigger.Label>Discover</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
@@ -20,7 +20,7 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="picks">
+      <NativeTabs.Trigger name="picks" disableAutomaticContentInsets>
         <NativeTabs.Trigger.Label>Picks</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/picks.png')}
@@ -28,7 +28,7 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="me">
+      <NativeTabs.Trigger name="me" disableAutomaticContentInsets>
         <NativeTabs.Trigger.Label>Me</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/me.png')}

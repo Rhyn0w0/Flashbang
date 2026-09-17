@@ -19,7 +19,8 @@ export const add = mutation({
       .query('photos')
       .withIndex('by_profile', (q) => q.eq('profileId', profile._id))
       .collect();
-    return ctx.db.insert('photos', { profileId: profile._id, storageId, order: existing.length });
+    const nextOrder = existing.reduce((max, p) => Math.max(max, p.order + 1), 0);
+    return ctx.db.insert('photos', { profileId: profile._id, storageId, order: nextOrder });
   },
 });
 

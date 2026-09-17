@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from 'convex/react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -48,9 +48,9 @@ function ProfileForm({ profile }: { profile: Doc<'profiles'> | null }) {
   const [error, setError] = useState<unknown>(null);
 
   const save = async () => {
-    const parsedAge = Number.parseInt(age, 10);
-    if (!displayName.trim() || Number.isNaN(parsedAge)) {
-      setError(new Error('Name and age are required'));
+    const parsedAge = Number(age);
+    if (!displayName.trim() || !Number.isInteger(parsedAge) || parsedAge <= 0) {
+      setError(new Error('Name and a whole-number age are required'));
       return;
     }
     setSaving(true);
@@ -92,16 +92,10 @@ function Photos() {
 
   const byPhoto = new Map((sentiment ?? []).map((s) => [s.photoId, s]));
 
-  const pickAndUpload = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
-    });
-    if (result.canceled) return;
+  const upload = async (asset: ImagePicker.ImagePickerAsset) => {
     setUploading(true);
     setError(null);
     try {
-      const asset = result.assets[0];
       const blob = await (await fetch(asset.uri)).blob();
       const uploadUrl = await generateUploadUrl();
       const response = await fetch(uploadUrl, {
@@ -118,6 +112,22 @@ function Photos() {
       setUploading(false);
     }
   };
+
+  const pickAndUpload = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+    });
+    if (!result.canceled) await upload(result.assets[0]);
+  };
+
+  // Android may destroy the activity while the picker is open; recover that selection.
+  useEffect(() => {
+    ImagePicker.getPendingResultAsync().then((pending) => {
+      if (pending && !('code' in pending) && !pending.canceled) void upload(pending.assets[0]);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   return (
     <View style={styles.photos}>
