@@ -11,10 +11,12 @@
 import type * as ai_analyzeComment from "../ai/analyzeComment.js";
 import type * as ai_model from "../ai/model.js";
 import type * as ai_refinePicks from "../ai/refinePicks.js";
-import type * as ai_summarizePhoto from "../ai/summarizePhoto.js";
+import type * as ai_tags from "../ai/tags.js";
 import type * as comments from "../comments.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_profileRules from "../lib/profileRules.js";
+import type * as lib_sentimentSummary from "../lib/sentimentSummary.js";
+import type * as lib_taste from "../lib/taste.js";
 import type * as photos from "../photos.js";
 import type * as picks from "../picks.js";
 import type * as profiles from "../profiles.js";
@@ -31,10 +33,12 @@ declare const fullApi: ApiFromModules<{
   "ai/analyzeComment": typeof ai_analyzeComment;
   "ai/model": typeof ai_model;
   "ai/refinePicks": typeof ai_refinePicks;
-  "ai/summarizePhoto": typeof ai_summarizePhoto;
+  "ai/tags": typeof ai_tags;
   comments: typeof comments;
   "lib/auth": typeof lib_auth;
   "lib/profileRules": typeof lib_profileRules;
+  "lib/sentimentSummary": typeof lib_sentimentSummary;
+  "lib/taste": typeof lib_taste;
   photos: typeof photos;
   picks: typeof picks;
   profiles: typeof profiles;

@@ -2,10 +2,10 @@ import { v } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
 
-import { internalMutation, internalQuery, query } from './_generated/server';
+import { internalMutation, query } from './_generated/server';
 import { requireProfile } from './lib/auth';
+import { composeSummary } from './lib/sentimentSummary';
 import { LIKELY_MATCH_THRESHOLD } from './picks';
-import { sentimentCounts } from './schema';
 
 /** Sentiment summaries for the caller's own photos. Aggregates only, no comment text. */
 export const forMyPhotos = query({
@@ -20,17 +20,18 @@ export const forMyPhotos = query({
 });
 
 /**
- * Counts analysed comments on a photo, split into everyone vs. commenters the
- * photo owner is likely attracted to. "Likely" means the commenter's profile
- * sits in the owner's picks above LIKELY_MATCH_THRESHOLD.
+ * Rebuilds the aggregate shown to a photo's owner from the analysed comments on it,
+ * split into everyone vs. commenters the owner is likely attracted to. "Likely" means
+ * the commenter's profile sits in the owner's picks above LIKELY_MATCH_THRESHOLD.
+ * The summary sentence is composed from counts alone; no comment text is involved.
  */
-export const countsForPhoto = internalQuery({
+export const rebuildForPhoto = internalMutation({
   args: { photoId: v.id('photos') },
   handler: async (ctx, { photoId }) => {
     const photo = await ctx.db.get(photoId);
-    if (!photo) return null;
+    if (!photo) return;
     const ownerProfile = await ctx.db.get(photo.profileId);
-    if (!ownerProfile) return null;
+    if (!ownerProfile) return;
 
     const comments = await ctx.db
       .query('comments')
@@ -74,29 +75,23 @@ export const countsForPhoto = internalQuery({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([tag]) => tag);
-
     const commentCount = overall.positive + overall.neutral + overall.negative;
-    return { profileId: photo.profileId, overall, fromLikelyMatches, topTags, commentCount };
-  },
-});
 
-export const save = internalMutation({
-  args: {
-    photoId: v.id('photos'),
-    profileId: v.id('profiles'),
-    overall: sentimentCounts,
-    fromLikelyMatches: sentimentCounts,
-    summary: v.string(),
-    commentCount: v.number(),
-  },
-  handler: async (ctx, args) => {
     const existing = await ctx.db
       .query('photoSentiment')
-      .withIndex('by_photo', (q) => q.eq('photoId', args.photoId))
+      .withIndex('by_photo', (q) => q.eq('photoId', photoId))
       .unique();
     // Several analyses can be in flight for one photo; never let an older snapshot win.
-    if (existing && existing.commentCount > args.commentCount) return;
-    const row = { ...args, updatedAt: Date.now() };
+    if (existing && existing.commentCount > commentCount) return;
+    const row = {
+      photoId,
+      profileId: photo.profileId,
+      overall,
+      fromLikelyMatches,
+      summary: composeSummary(overall, fromLikelyMatches, topTags),
+      commentCount,
+      updatedAt: Date.now(),
+    };
     if (existing) await ctx.db.patch(existing._id, row);
     else await ctx.db.insert('photoSentiment', row);
   },

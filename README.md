@@ -7,19 +7,19 @@ The primary difference from other dating apps is that, rather than showing you p
 
 ## Stack
 
-| Layer | Choice |
-| --- | --- |
-| App | Expo SDK 57, Expo Router, React Native (iOS, Android, web) |
-| Backend | Convex (database, file storage, scheduled actions) |
-| AI | Vercel AI SDK with the Anthropic provider, model `claude-opus-5` |
-| Web hosting | Vercel, static export of the Expo web build |
+| Layer       | Choice                                                                                   |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| App         | Expo SDK 57, Expo Router, React Native (iOS, Android, web)                               |
+| Backend     | Convex (database, file storage, scheduled actions)                                       |
+| AI          | Vercel AI SDK `evaluate` with Jev (TypeSafe AI, `typesafe-ai/jev`) via Vercel AI Gateway |
+| Web hosting | Vercel, static export of the Expo web build                                              |
 
 ## Getting started
 
 ```bash
 npm install
 npx convex dev        # links a deployment, writes EXPO_PUBLIC_CONVEX_URL to .env.local
-npx convex env set ANTHROPIC_API_KEY sk-ant-...
+npx convex env set AI_GATEWAY_API_KEY vck_...   # from the Vercel dashboard, AI Gateway tab
 npm start             # then press i / a / w
 ```
 
@@ -35,7 +35,8 @@ src/components/     Shared UI (Screen, ProfileCard, Button, TextField, tabs)
 src/lib/convex.ts   Convex client
 convex/schema.ts    Tables: users, profiles, photos, comments, tastes, picks, photoSentiment
 convex/*.ts         Queries and mutations, grouped by table
-convex/ai/          Actions that call the model (analyzeComment, refinePicks, summarizePhoto)
+convex/ai/          Actions that call the model (analyzeComment, refinePicks) and the tag vocabulary
+convex/lib/         Auth helpers and the code that turns model answers into text
 vercel.json         Web deploy config
 ```
 
@@ -43,26 +44,26 @@ vercel.json         Web deploy config
 
 1. Discover shows one profile. The user writes a note and taps Next.
 2. `comments.create` stores the note privately and schedules two actions.
-3. `ai/analyzeComment` labels the note with a sentiment and generic tags.
-4. `ai/refinePicks` rewrites the author's taste summary and re-ranks a candidate pool into `picks`.
-5. If the note was about a photo, `ai/summarizePhoto` recomputes the owner's sentiment summary from counts only. "Likely matches" are commenters who appear in the owner's own picks above a threshold.
+3. `ai/analyzeComment` asks Jev for the note's sentiment and which of a fixed set of generic tags it reacts to, all in one call.
+4. `ai/refinePicks` derives the author's taste from their tags, then asks Jev to score a candidate pool against it and writes `picks`.
+5. If the note was about a photo, the owner's sentiment summary is recomputed from counts only. "Likely matches" are commenters who appear in the owner's own picks above a threshold.
 
-Raw comment text is only ever readable by its author and the model.
+Jev is an evaluation model, not a text generator: it returns choices, scores, and probabilities. Every sentence a user sees (taste summary, pick reasons, photo feedback) is composed in code from those answers, so nothing a commenter wrote can be echoed back. Raw comment text is only ever readable by its author and the model, with zero data retention requested.
 
 ## Scripts
 
-| Script | What it does |
-| --- | --- |
-| `npm start` | Expo dev server |
-| `npm run convex` | Convex dev server with live function reload |
+| Script              | What it does                                    |
+| ------------------- | ----------------------------------------------- |
+| `npm start`         | Expo dev server                                 |
+| `npm run convex`    | Convex dev server with live function reload     |
 | `npm run build:web` | Static web export to `dist/` (what Vercel runs) |
-| `npm run typecheck` | `tsc --noEmit` across app and backend |
-| `npm run lint` | Expo ESLint config |
+| `npm run typecheck` | `tsc --noEmit` across app and backend           |
+| `npm run lint`      | Expo ESLint config                              |
 
 ## Deploying
 
 - **Web:** import the repo into Vercel. `vercel.json` sets the build command and output directory. Add `EXPO_PUBLIC_CONVEX_URL` as a Vercel environment variable pointing at your production Convex deployment.
-- **Convex:** `npx convex deploy`. Set `ANTHROPIC_API_KEY` on the production deployment.
+- **Convex:** `npx convex deploy`. Set `AI_GATEWAY_API_KEY` on the production deployment.
 - **iOS / Android:** use EAS Build (`npx eas build`). Not configured yet.
 
 ## Not done yet

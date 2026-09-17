@@ -9,7 +9,7 @@ comments to refine picks and to produce per-photo sentiment summaries. See READM
 
 - `src/app/` — Expo Router screens (`index` discover, `picks`, `me`). `src/components/`, `src/hooks/`, `src/constants/` hold shared UI.
 - `src/convex/` does not exist; the backend lives in `convex/` at the repo root (Convex convention).
-- `convex/schema.ts` — tables. `convex/ai/` — Vercel AI SDK calls (Anthropic provider). Actions in `convex/ai/` are the only place the model is called.
+- `convex/schema.ts` — tables. `convex/ai/` — Vercel AI SDK `evaluate` calls to Jev (TypeSafe AI) through Vercel AI Gateway. Actions in `convex/ai/` are the only place the model is called.
 - `vercel.json` — web deploy (`expo export --platform web` → `dist/`).
 
 ## Commands
@@ -22,3 +22,4 @@ comments to refine picks and to produce per-photo sentiment summaries. See READM
 
 - Comments are private. Never return raw comment text to anyone but the author. Only aggregated sentiment leaves the server.
 - Model calls go through `convex/ai/model.ts`; do not instantiate providers elsewhere.
+- Jev is an evaluation model: it answers choice/score/boolean questions and never generates text. Any prose shown to users is composed in code (`convex/lib/taste.ts`, `convex/lib/sentimentSummary.ts`), and tags come from the fixed vocabulary in `convex/ai/tags.ts`.

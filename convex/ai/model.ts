@@ -1,19 +1,17 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGateway } from '@ai-sdk/gateway';
 
 /**
- * Single place the model is configured. Set the key on the deployment:
- *   npx convex env set ANTHROPIC_API_KEY sk-ant-...
+ * The only model instance in the codebase. Jev (TypeSafe AI) is an evaluation model: it
+ * answers typed questions about a piece of state with choices, scores, and probabilities,
+ * and never generates text. Every AI feature is therefore a set of questions, and any prose
+ * shown to users is composed in code from the answers.
+ *
+ * Reached through Vercel AI Gateway; set AI_GATEWAY_API_KEY on the Convex deployment.
  */
-const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
 
-export const MODEL_ID = 'claude-opus-5';
+export const MODEL_ID = 'typesafe-ai/jev';
+export const model = gateway.evaluationModel(MODEL_ID);
 
-export const model = anthropic(MODEL_ID);
-
-/** Default Anthropic options for the short, structured calls this app makes. */
-export const providerOptions = {
-  anthropic: {
-    thinking: { type: 'adaptive' as const },
-    effort: 'low' as const,
-  },
-};
+// Comment text reaches the model; keep it out of provider logs.
+export const providerOptions = { gateway: { zeroDataRetention: true } };
