@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 
-import { internalMutation, query } from './_generated/server';
+import { internalMutation, internalQuery, query } from './_generated/server';
 import { currentUser, requireUser } from './lib/auth';
 import { publicProfile } from './profiles';
 
@@ -81,6 +81,15 @@ export const taste = query({
       .withIndex('by_user', (q) => q.eq('userId', user._id))
       .unique();
   },
+});
+
+export const getTaste = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) =>
+    ctx.db
+      .query('tastes')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique(),
 });
 
 /** Replace a user's pick set. Keeps seenAt for profiles that were already shown. */

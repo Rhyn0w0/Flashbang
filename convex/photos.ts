@@ -31,6 +31,12 @@ export const remove = mutation({
     if (!photo || photo.profileId !== profile._id) throw new Error('Not your photo');
     await ctx.storage.delete(photo.storageId);
     await ctx.db.delete(photoId);
+    // Keep the comments (they still inform the author's taste) but drop the dead reference.
+    const attached = await ctx.db
+      .query('comments')
+      .withIndex('by_photo', (q) => q.eq('photoId', photoId))
+      .collect();
+    await Promise.all(attached.map((c) => ctx.db.patch(c._id, { photoId: undefined })));
     const sentiment = await ctx.db
       .query('photoSentiment')
       .withIndex('by_photo', (q) => q.eq('photoId', photoId))

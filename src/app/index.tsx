@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { Button } from '@/components/button';
+import { ErrorText } from '@/components/error-text';
 import { ProfileCard } from '@/components/profile-card';
 import { Screen } from '@/components/screen';
 import { TextField } from '@/components/text-field';
@@ -21,6 +22,7 @@ export default function DiscoverScreen() {
   const createComment = useMutation(api.comments.create);
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   if (user === undefined || next === undefined) return <Screen>{null}</Screen>;
 
@@ -48,11 +50,12 @@ export default function DiscoverScreen() {
 
   const submit = async () => {
     setSubmitting(true);
+    setError(null);
     try {
       await createComment({ targetProfileId: next.profile._id, body });
       setBody('');
-    } catch (error) {
-      Alert.alert('Could not save', error instanceof Error ? error.message : String(error));
+    } catch (caught) {
+      setError(caught);
     } finally {
       setSubmitting(false);
     }
@@ -75,6 +78,7 @@ export default function DiscoverScreen() {
         onChangeText={setBody}
         placeholder="What do you think? Only you and the algorithm will ever read this."
       />
+      <ErrorText error={error} />
       <Button title="Next" onPress={submit} disabled={!body.trim()} loading={submitting} />
     </Screen>
   );

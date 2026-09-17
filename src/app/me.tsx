@@ -2,9 +2,10 @@ import { useMutation, useQuery } from 'convex/react';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { ErrorText } from '@/components/error-text';
 import { Screen } from '@/components/screen';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -44,14 +45,16 @@ function ProfileForm({ profile }: { profile: Doc<'profiles'> | null }) {
   const [city, setCity] = useState(profile?.city ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   const save = async () => {
     const parsedAge = Number.parseInt(age, 10);
     if (!displayName.trim() || Number.isNaN(parsedAge)) {
-      Alert.alert('Name and age are required');
+      setError(new Error('Name and age are required'));
       return;
     }
     setSaving(true);
+    setError(null);
     try {
       await upsert({
         displayName: displayName.trim(),
@@ -59,8 +62,8 @@ function ProfileForm({ profile }: { profile: Doc<'profiles'> | null }) {
         bio,
         city: city || undefined,
       });
-    } catch (error) {
-      Alert.alert('Could not save', error instanceof Error ? error.message : String(error));
+    } catch (caught) {
+      setError(caught);
     } finally {
       setSaving(false);
     }
@@ -72,6 +75,7 @@ function ProfileForm({ profile }: { profile: Doc<'profiles'> | null }) {
       <TextField placeholder="Age" value={age} onChangeText={setAge} keyboardType="number-pad" />
       <TextField placeholder="City (optional)" value={city} onChangeText={setCity} />
       <TextField placeholder="Bio" value={bio} onChangeText={setBio} multiline />
+      <ErrorText error={error} />
       <Button title={profile ? 'Save' : 'Create profile'} onPress={save} loading={saving} />
     </>
   );
@@ -84,6 +88,7 @@ function Photos() {
   const addPhoto = useMutation(api.photos.add);
   const removePhoto = useMutation(api.photos.remove);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   const byPhoto = new Map((sentiment ?? []).map((s) => [s.photoId, s]));
 
@@ -94,6 +99,7 @@ function Photos() {
     });
     if (result.canceled) return;
     setUploading(true);
+    setError(null);
     try {
       const asset = result.assets[0];
       const blob = await (await fetch(asset.uri)).blob();
@@ -103,10 +109,11 @@ function Photos() {
         headers: { 'Content-Type': asset.mimeType ?? 'image/jpeg' },
         body: blob,
       });
+      if (!response.ok) throw new Error(`Upload failed (${response.status})`);
       const { storageId } = await response.json();
       await addPhoto({ storageId });
-    } catch (error) {
-      Alert.alert('Upload failed', error instanceof Error ? error.message : String(error));
+    } catch (caught) {
+      setError(caught);
     } finally {
       setUploading(false);
     }
@@ -128,7 +135,7 @@ function Photos() {
                   down
                 </ThemedText>
               ) : null}
-              <Pressable onPress={() => removePhoto({ photoId: photo._id })}>
+              <Pressable onPress={() => removePhoto({ photoId: photo._id }).catch(setError)}>
                 <ThemedText type="link" themeColor="textSecondary">
                   Remove
                 </ThemedText>
@@ -137,6 +144,7 @@ function Photos() {
           </ThemedView>
         );
       })}
+      <ErrorText error={error} />
       <Button title="Add photo" onPress={pickAndUpload} loading={uploading} />
     </View>
   );

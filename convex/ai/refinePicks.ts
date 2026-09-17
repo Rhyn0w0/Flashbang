@@ -30,17 +30,23 @@ const picksSchema = z.object({
 
 /**
  * Two model calls: distill the user's comment history into a taste profile,
- * then rank a candidate pool against it. Scheduled after every new comment.
+ * then rank a candidate pool against it. Scheduled after every new comment with a
+ * short delay so bursts of comments only trigger one rebuild.
  * Naive on purpose; swap the candidate pool for a vector search when it grows.
  */
 export const run = internalAction({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }) => {
+    // Runs are scheduled with a delay, so several comments in a row collapse into one
+    // rebuild: any run that sees no new comments since the last rebuild exits early.
+    const totalComments = await ctx.runQuery(internal.comments.countByAuthor, { authorId: userId });
+    const existingTaste = await ctx.runQuery(internal.picks.getTaste, { userId });
+    if (totalComments === 0 || existingTaste?.commentCount === totalComments) return;
+
     const history = await ctx.runQuery(internal.comments.recentByAuthor, {
       authorId: userId,
       limit: COMMENT_HISTORY,
     });
-    if (history.length === 0) return;
 
     const { output: taste } = await generateText({
       model,
@@ -65,7 +71,7 @@ export const run = internalAction({
     await ctx.runMutation(internal.picks.saveTaste, {
       userId,
       ...taste,
-      commentCount: history.length,
+      commentCount: totalComments,
     });
 
     const candidates = await ctx.runQuery(internal.profiles.listCandidates, {
@@ -94,8 +100,12 @@ export const run = internalAction({
       }),
     });
 
+    // The model may repeat an index; keep the first occurrence so each profile has one pick row.
+    const seenIndexes = new Set<number>();
     const picks = ranked.picks
-      .filter((p) => p.index < candidates.length)
+      .filter(
+        (p) => p.index < candidates.length && !seenIndexes.has(p.index) && seenIndexes.add(p.index)
+      )
       .map((p) => ({ profileId: candidates[p.index]._id, score: p.score, reason: p.reason }));
 
     await ctx.runMutation(internal.picks.replaceAll, { userId, picks });

@@ -6,6 +6,8 @@ import { requireUser } from './lib/auth';
 import { sentimentValidator } from './schema';
 
 const MAX_COMMENT_LENGTH = 1000;
+// Delay before re-ranking so a burst of comments costs one model run, not one per comment.
+const REFINE_DELAY_MS = 30_000;
 
 /**
  * The only write path for comments. Kicks off the two async AI jobs:
@@ -47,7 +49,9 @@ export const create = mutation({
     if (pick && !pick.seenAt) await ctx.db.patch(pick._id, { seenAt: Date.now() });
 
     await ctx.scheduler.runAfter(0, internal.ai.analyzeComment.run, { commentId });
-    await ctx.scheduler.runAfter(0, internal.ai.refinePicks.run, { userId: user._id });
+    await ctx.scheduler.runAfter(REFINE_DELAY_MS, internal.ai.refinePicks.run, {
+      userId: user._id,
+    });
     return commentId;
   },
 });
@@ -106,6 +110,17 @@ export const recentByAuthor = internalQuery({
         };
       })
     );
+  },
+});
+
+export const countByAuthor = internalQuery({
+  args: { authorId: v.id('users') },
+  handler: async (ctx, { authorId }) => {
+    const rows = await ctx.db
+      .query('comments')
+      .withIndex('by_author', (q) => q.eq('authorId', authorId))
+      .collect();
+    return rows.length;
   },
 });
 
