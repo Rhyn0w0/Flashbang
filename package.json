@@ -15,7 +15,7 @@
     "convex": "npm run dev --workspace @flashbang/backend --",
     "backend": "npm exec --workspace @flashbang/backend -- convex",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspace @flashbang/frontend",
+    "test": "npm run test --workspaces --if-present",
     "test:auth": "node scripts/verify-clerk.mjs",
     "check:structure": "node scripts/check-structure.mjs",
     "lint": "eslint .",

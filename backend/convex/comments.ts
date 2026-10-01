@@ -10,8 +10,7 @@ const MAX_COMMENT_LENGTH = 1000;
 const REFINE_DELAY_MS = 30_000;
 
 /**
- * The only write path for comments. Kicks off the two async AI jobs:
- * sentiment analysis of this comment, and a refresh of the author's picks.
+ * Stores private feedback and schedules analysis. Saving the analysis schedules ranking.
  */
 export const create = mutation({
   args: {
@@ -56,9 +55,6 @@ export const create = mutation({
     if (pick && !pick.seenAt) await ctx.db.patch(pick._id, { seenAt: Date.now() });
 
     await ctx.scheduler.runAfter(0, internal.ai.analyzeComment.run, { commentId });
-    await ctx.scheduler.runAfter(REFINE_DELAY_MS, internal.ai.refinePicks.run, {
-      userId: user._id,
-    });
     return commentId;
   },
 });
@@ -127,6 +123,11 @@ export const saveAnalysis = internalMutation({
     tags: v.array(v.string()),
   },
   handler: async (ctx, { commentId, sentiment, tags }) => {
+    const comment = await ctx.db.get(commentId);
+    if (!comment || comment.analyzedAt !== undefined) return;
     await ctx.db.patch(commentId, { sentiment, tags, analyzedAt: Date.now() });
+    await ctx.scheduler.runAfter(REFINE_DELAY_MS, internal.ai.refinePicks.run, {
+      userId: comment.authorId,
+    });
   },
 });
