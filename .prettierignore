@@ -1,3 +1,4 @@
-convex/_generated/
-dist/
-node_modules/
+backend/convex/_generated/
+**/dist/
+**/.expo/
+**/node_modules/

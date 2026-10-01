@@ -1,0 +1,25 @@
+{
+  "name": "@flashbang/backend",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./api": {
+      "types": "./convex/_generated/api.d.ts",
+      "default": "./convex/_generated/api.js"
+    },
+    "./types": {
+      "types": "./convex/_generated/dataModel.d.ts"
+    }
+  },
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "codegen": "convex codegen",
+    "typecheck": "tsc --noEmit -p convex/tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.85",
+    "ai": "^7.0.105",
+    "convex": "^1.46.0"
+  }
+}
