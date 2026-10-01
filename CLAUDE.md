@@ -7,19 +7,28 @@ comments to refine picks and to produce per-photo sentiment summaries. See READM
 
 ## Layout
 
-- `src/app/` — Expo Router screens (`index` discover, `picks`, `me`). `src/components/`, `src/hooks/`, `src/constants/` hold shared UI.
-- `src/convex/` does not exist; the backend lives in `convex/` at the repo root (Convex convention).
-- `convex/schema.ts` — tables. `convex/ai/` — Vercel AI SDK `evaluate` calls to Jev (TypeSafe AI) through Vercel AI Gateway. Actions in `convex/ai/` are the only place the model is called.
-- `vercel.json` — web deploy (`expo export --platform web` → `dist/`).
+- `frontend/src/app/` contains Expo Router entry points for Discover, Picks, and Me.
+- `frontend/src/features/` contains auth, discover, picks, and profile modules.
+- `frontend/src/components/ui/` and `navigation/` contain shared UI and platform-specific tabs.
+- `backend/convex/` contains the schema, authentication, functions, and generated client API.
+- `backend/convex/ai/` is the only place actions call Jev through Vercel AI Gateway.
+- `shared/profile-rules.ts` contains age limits for the profile form and server mutation.
+- `scripts/check-structure.mjs` resolves imports and checks frontend/backend boundaries.
+- `vercel.json` configures the web export to `frontend/dist/`.
 
 ## Commands
 
-- `npm start` — Expo dev server. `npm run web` / `ios` / `android`.
-- `npx convex dev` — run Convex locally and regenerate `convex/_generated/`.
-- `npm run typecheck`, `npm run lint`.
+- `npm start` runs the Expo dev server. Use `npm run web`, `ios`, or `android` for a platform.
+- `npm run convex` runs Convex and regenerates `backend/convex/_generated/`.
+- `npm run backend -- <command>` runs another Convex command in the backend workspace.
+- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run check:structure` verify the project.
+
+Run commands from the repository root. Public Expo configuration belongs in
+`frontend/.env.local`. Convex deployment selection belongs in `backend/.env.local`.
 
 ## Rules
 
 - Comments are private. Never return raw comment text to anyone but the author. Only aggregated sentiment leaves the server.
-- Model calls go through `convex/ai/model.ts`; do not instantiate providers elsewhere.
-- Jev is an evaluation model: it answers choice/score/boolean questions and never generates text. Any prose shown to users is composed in code (`convex/lib/taste.ts`, `convex/lib/sentimentSummary.ts`), and tags come from the fixed vocabulary in `convex/ai/tags.ts`.
+- Frontend code imports only `@flashbang/backend/api` and `@flashbang/backend/types` from the backend. Shared code stays free of platform imports.
+- Model calls go through `backend/convex/ai/model.ts`; do not instantiate providers elsewhere.
+- Jev returns choices, scores, and probabilities. User-facing prose is composed in `backend/convex/lib/taste.ts` and `sentimentSummary.ts`; tags come from `backend/convex/ai/tags.ts`.
