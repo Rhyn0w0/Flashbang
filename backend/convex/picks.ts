@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 
 import { internalMutation, query } from './_generated/server';
 import { currentUser, requireUser } from './lib/auth';
+import { COMMENT_HISTORY } from './lib/taste';
 import { publicProfile } from './profiles';
 
 const LIKELY_MATCH_THRESHOLD = 0.6;
@@ -27,7 +28,14 @@ export const next = query({
     for (const pick of picks) {
       if (pick.seenAt) continue;
       const profile = await ctx.db.get(pick.profileId);
-      if (!profile || !profile.active) continue;
+      if (!profile || !profile.active || profile.userId === user._id) continue;
+      const commented = await ctx.db
+        .query('comments')
+        .withIndex('by_author_target', (q) =>
+          q.eq('authorId', user._id).eq('targetProfileId', profile._id)
+        )
+        .first();
+      if (commented) continue;
       return {
         pick: { score: pick.score, reason: pick.reason },
         profile: await publicProfile(ctx, profile),
@@ -100,9 +108,14 @@ export const claimRefine = internalMutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .unique();
     if (!stats || stats.commentCount === 0) return null;
+    const history = await ctx.db
+      .query('comments')
+      .withIndex('by_author', (q) => q.eq('authorId', userId))
+      .order('desc')
+      .take(COMMENT_HISTORY);
+    if (history.some((note) => !note.sentiment || !note.tags)) return null;
     const count = stats.commentCount;
-    // refinedCount is only set once picks were replaced, so a run that saved its taste
-    // but failed before ranking is retried by the next run rather than skipped.
+    // Only a successful atomic save marks the revision as refined.
     if ((stats.refinedCount ?? 0) >= count) return null;
     const now = Date.now();
     const claimed =
@@ -115,25 +128,44 @@ export const claimRefine = internalMutation({
   },
 });
 
+export const releaseRefine = internalMutation({
+  args: { userId: v.id('users'), commentCount: v.number() },
+  handler: async (ctx, { userId, commentCount }) => {
+    const stats = await ctx.db
+      .query('authorStats')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique();
+    if (stats?.refineClaimedCount === commentCount) {
+      await ctx.db.patch(stats._id, { refineClaimedCount: undefined, refineClaimedAt: undefined });
+    }
+  },
+});
+
 /**
  * Replace a user's pick set. Keeps seenAt for profiles that were already shown.
  * `commentCount` is the history size the picks were computed from; a run based on
- * fewer comments than the stored taste is stale and is dropped.
+ * a revision that no longer matches the current comment count is dropped.
  */
 export const replaceAll = internalMutation({
   args: {
     userId: v.id('users'),
     commentCount: v.number(),
+    taste: v.object({
+      summary: v.string(),
+      drawnTo: v.array(v.string()),
+      putOffBy: v.array(v.string()),
+    }),
     picks: v.array(
       v.object({ profileId: v.id('profiles'), score: v.number(), reason: v.string() })
     ),
   },
-  handler: async (ctx, { userId, commentCount, picks }) => {
-    const taste = await ctx.db
-      .query('tastes')
+  handler: async (ctx, { userId, commentCount, taste, picks }) => {
+    const stats = await ctx.db
+      .query('authorStats')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .unique();
-    if (taste && taste.commentCount > commentCount) return;
+    if (!stats || stats.commentCount !== commentCount || (stats.refinedCount ?? 0) >= commentCount)
+      return;
     const existing = await ctx.db
       .query('picks')
       .withIndex('by_user_score', (q) => q.eq('userId', userId))
@@ -145,34 +177,14 @@ export const replaceAll = internalMutation({
         ctx.db.insert('picks', { userId, ...p, seenAt: seen.get(p.profileId) ?? undefined })
       )
     );
-    const stats = await ctx.db
-      .query('authorStats')
+    const existingTaste = await ctx.db
+      .query('tastes')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .unique();
-    if (stats && (stats.refinedCount ?? 0) < commentCount) {
-      await ctx.db.patch(stats._id, { refinedCount: commentCount });
-    }
-  },
-});
-
-export const saveTaste = internalMutation({
-  args: {
-    userId: v.id('users'),
-    summary: v.string(),
-    drawnTo: v.array(v.string()),
-    putOffBy: v.array(v.string()),
-    commentCount: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query('tastes')
-      .withIndex('by_user', (q) => q.eq('userId', args.userId))
-      .unique();
-    // Ignore a result computed from an older history than what is already stored.
-    if (existing && existing.commentCount > args.commentCount) return;
-    const row = { ...args, updatedAt: Date.now() };
-    if (existing) await ctx.db.patch(existing._id, row);
+    const row = { userId, commentCount, ...taste, updatedAt: Date.now() };
+    if (existingTaste) await ctx.db.patch(existingTaste._id, row);
     else await ctx.db.insert('tastes', row);
+    await ctx.db.patch(stats._id, { refinedCount: commentCount });
   },
 });
 

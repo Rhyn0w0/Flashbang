@@ -1,7 +1,7 @@
 # Flashbang
 
 Flashbang is a dating app built for iOS, Android, and web.
-It is made with Expo, hosted on Vercel, uses a Convex backend, and uses Vercel's AI SDK for an AI-powered matching algorithm.
+It is made with Expo, hosted on Vercel, uses a Convex backend, and calls TypeSafe AI directly for matching.
 
 The primary difference from other dating apps is that, rather than showing you people and having you click yes or no, you leave comments about each profile. Those comments help the AI narrow down what kind of people you're looking for, and it suggests more refined picks as you keep commenting. Comments are never visible to other users. Each user can see a summary of general sentiment towards each photo they post, and more specifically the sentiment from people the algorithm deems them likely to be attracted to.
 
@@ -12,7 +12,7 @@ The primary difference from other dating apps is that, rather than showing you p
 | App            | Expo SDK 57, Expo Router, React Native (iOS, Android, web)                               |
 | Backend        | Convex (database, file storage, scheduled actions)                                       |
 | Authentication | Clerk (hosted auth on mobile, Clerk sign-in component on web)                            |
-| AI             | Vercel AI SDK `evaluate` with Jev (TypeSafe AI, `typesafe-ai/jev`) via Vercel AI Gateway |
+| AI             | [TypeSafe AI SDK](https://docs.typesafe.ai/sdk/javascript) with Jev (`jev-latest`) |
 | Web hosting    | Vercel, static export of the Expo web build                                              |
 
 ## Getting started
@@ -21,7 +21,7 @@ The primary difference from other dating apps is that, rather than showing you p
 npm install
 npm run convex       # links the backend deployment; keep this terminal running
 # Follow "Set up Clerk sign-in" below before signing in.
-npm run backend -- env set AI_GATEWAY_API_KEY vck_...   # run in another terminal
+npm run backend -- env set TYPESAFE_API_KEY YOUR_TYPESAFE_API_KEY   # run in another terminal
 npm start            # starts the frontend; then press i / a / w
 ```
 
@@ -32,6 +32,12 @@ Convex stores deployment settings in `backend/.env.local`. Copy `frontend/.env.e
 `npm run convex` regenerates `backend/convex/_generated/`. Those files are committed, so a fresh checkout can run `npm run typecheck` after installing dependencies.
 
 If you have no Convex account, `npm run convex` offers a local, account-free deployment.
+
+To add 50 fictional adult profiles to the local deployment, keep Convex running and run
+`npm run seed:profiles`. Each has a different bio and is marked `(Test)` in Discover.
+The seed creates backing user records without Clerk accounts or photos. Running it again
+leaves existing test profiles untouched and does not create duplicates. The admin-only
+seed refuses to run on a cloud deployment.
 
 ## Set up Clerk sign-in
 
@@ -83,6 +89,7 @@ backend/
   convex/                    Schema, auth, queries, mutations
     ai/                      Comment analysis and recommendation actions
     lib/                     Backend helpers
+  tests/                     Matching, scheduling, and privacy regression tests
     _generated/              Generated client API and types
 shared/
   profile-rules.ts           Age limits used by both workspaces
@@ -97,12 +104,12 @@ Routes import feature screens. Features use the shared UI components. The fronte
 ## How the loop works
 
 1. Discover shows one profile. The user writes a note and taps Next.
-2. `comments.create` stores the note privately and schedules two actions.
-3. `ai/analyzeComment` asks Jev for the note's sentiment and which of a fixed set of generic tags it reacts to, all in one call.
-4. `ai/refinePicks` derives the author's taste from their tags, then asks Jev to score a candidate pool against it and writes `picks`.
+2. `comments.create` stores the note privately and schedules analysis.
+3. `ai/analyzeComment` asks Jev for sentiment and generic tags in one call. Tags need a yes probability of at least 0.6; at most six are kept. Saving analysis schedules ranking after 30 seconds.
+4. `ai/refinePicks` waits for analysis of the latest 40 notes. Positive and negative tag counts determine up to five preferred traits and five disliked traits. Jev scores up to 30 unseen active profiles against these traits and the latest 20 notes. Scores use four rubric levels, normalized to 0–1. Up to ten profiles rated at least "good fit" are saved, highest score first. Taste and picks are saved together; older results and duplicate runs cannot replace them.
 5. If the note was about a photo, the owner's sentiment summary is recomputed from counts only. "Likely matches" are commenters who appear in the owner's own picks above a threshold.
 
-Jev is an evaluation model, not a text generator: it returns choices, scores, and probabilities. Every sentence a user sees (taste summary, pick reasons, photo feedback) is composed in code from those answers, so nothing a commenter wrote can be echoed back. Raw comment text is only ever readable by its author and the model, with zero data retention requested.
+Jev returns choices, scores, and probabilities. Code composes taste summaries, pick reasons, and photo feedback from those answers. The app never exposes raw comment text to other users. The backend sends comments directly to TypeSafe AI for analysis and ranking, with SDK logging disabled. The direct SDK has no documented per-request zero data retention option.
 
 ## Scripts
 
@@ -113,17 +120,17 @@ Jev is an evaluation model, not a text generator: it returns choices, scores, an
 | `npm run backend -- <command>` | Convex CLI in the backend workspace            |
 | `npm run build:web`            | Static web export to `frontend/dist/`          |
 | `npm run typecheck`            | Type checks across both workspaces             |
-| `npm test`                     | Native auth callback routing tests             |
+| `npm test`                     | Native auth callback and AI matching regression tests             |
 | `npm run test:auth`            | Live Clerk and local Convex integration checks |
 | `npm run check:structure`      | Source imports and frontend/backend boundaries |
 | `npm run lint`                 | Expo ESLint rules across both workspaces       |
 
-`npm run test:auth` requires a signed-in Clerk CLI, the configured development publishable key, and the local Convex server running. It creates temporary accounts, checks authentication, profile isolation, and photo ownership, then deletes its accounts, rows, and uploaded photo. It only targets the project-local Convex deployment and a Clerk development instance. It does not test browser interactions or AI matching. Set `AI_GATEWAY_API_KEY` on Convex before testing the AI loop.
+`npm run test:auth` requires a signed-in Clerk CLI, the configured development publishable key, and the local Convex server running. It creates temporary accounts, checks authentication, profile isolation, and photo ownership, then deletes its accounts, rows, and uploaded photo. It only targets the project-local Convex deployment and a Clerk development instance. It does not test browser interactions or AI matching. Set `TYPESAFE_API_KEY` on Convex before testing the AI loop.
 
 ## Deploying
 
 - **Web:** import the repo into Vercel. `vercel.json` sets the build command and output directory. Add `EXPO_PUBLIC_CONVEX_URL` pointing at your production Convex deployment and `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` for your production Clerk application.
-- **Convex:** `npm run backend -- deploy`. Set `AI_GATEWAY_API_KEY` and `CLERK_JWT_ISSUER_DOMAIN` on the production deployment.
+- **Convex:** `npm run backend -- deploy`. Set `TYPESAFE_API_KEY` and `CLERK_JWT_ISSUER_DOMAIN` on the production deployment.
 - **iOS / Android:** run EAS Build from `frontend/` (`npx eas build`). Not configured yet.
 
 ## Not done yet

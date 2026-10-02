@@ -1,17 +1,17 @@
-import { createGateway } from '@ai-sdk/gateway';
+import { TypeSafeClient } from '@typesafe-ai/sdk';
 
-/**
- * The only model instance in the codebase. Jev (TypeSafe AI) is an evaluation model: it
- * answers typed questions about a piece of state with choices, scores, and probabilities,
- * and never generates text. Every AI feature is therefore a set of questions, and any prose
- * shown to users is composed in code from the answers.
- *
- * Reached through Vercel AI Gateway; set AI_GATEWAY_API_KEY on the Convex deployment.
- */
-const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
+export const MODEL_ID = 'jev-latest';
 
-export const MODEL_ID = 'typesafe-ai/jev';
-export const model = gateway.evaluationModel(MODEL_ID);
-
-// Comment text reaches the model; keep it out of provider logs.
-export const providerOptions = { gateway: { zeroDataRetention: true } };
+// Construct inside actions so code generation and queries work without an API key.
+export function getModelClient() {
+  const apiKey = process.env.TYPESAFE_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error('Set TYPESAFE_API_KEY on the Convex deployment to enable matching.');
+  }
+  return new TypeSafeClient({
+    apiKey,
+    defaultModel: MODEL_ID,
+    // SDK debug logs include request bodies, which contain private comments.
+    logLevel: 'off',
+  });
+}

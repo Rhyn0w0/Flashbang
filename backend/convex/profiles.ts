@@ -82,10 +82,6 @@ export const get = query({
 export const listCandidates = internalQuery({
   args: { forUserId: v.id('users'), limit: v.number() },
   handler: async (ctx, { forUserId, limit }) => {
-    const active = await ctx.db
-      .query('profiles')
-      .withIndex('by_active', (q) => q.eq('active', true))
-      .take(limit + 1);
     const candidates: {
       _id: Id<'profiles'>;
       displayName: string;
@@ -93,8 +89,17 @@ export const listCandidates = internalQuery({
       bio: string;
       city?: string;
     }[] = [];
-    for (const p of active) {
+    for await (const p of ctx.db
+      .query('profiles')
+      .withIndex('by_active', (q) => q.eq('active', true))) {
       if (p.userId === forUserId) continue;
+      const commented = await ctx.db
+        .query('comments')
+        .withIndex('by_author_target', (q) =>
+          q.eq('authorId', forUserId).eq('targetProfileId', p._id)
+        )
+        .first();
+      if (commented) continue;
       candidates.push({
         _id: p._id,
         displayName: p.displayName,

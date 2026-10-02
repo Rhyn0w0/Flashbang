@@ -11,7 +11,7 @@ comments to refine picks and to produce per-photo sentiment summaries. See READM
 - `frontend/src/features/` contains auth, discover, picks, and profile modules.
 - `frontend/src/components/ui/` and `navigation/` contain shared UI and platform-specific tabs.
 - `backend/convex/` contains the schema, authentication, functions, and generated client API.
-- `backend/convex/ai/` is the only place actions call Jev through Vercel AI Gateway.
+- `backend/convex/ai/` is the only place actions call Jev (`jev-latest`) through `@typesafe-ai/sdk`. Set `TYPESAFE_API_KEY` on Convex.
 - `shared/profile-rules.ts` contains age limits for the profile form and server mutation.
 - `scripts/check-structure.mjs` resolves imports and checks frontend/backend boundaries.
 - `vercel.json` configures the web export to `frontend/dist/`.

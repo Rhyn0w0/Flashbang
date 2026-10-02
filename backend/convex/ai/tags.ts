@@ -22,10 +22,10 @@ export const TAGS = {
 
 export type Tag = keyof typeof TAGS;
 
-export const TAG_KEYS = Object.keys(TAGS) as Tag[];
+export const TAG_KEYS = Object.keys(TAGS).filter(isTag);
 
 export function isTag(value: string): value is Tag {
-  return value in TAGS;
+  return Object.hasOwn(TAGS, value);
 }
 
 export function tagLabel(tag: string) {
