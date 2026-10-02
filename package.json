@@ -17,6 +17,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:auth": "node scripts/verify-clerk.mjs",
+    "seed:profiles": "npm run backend -- run seed:profilesForTesting",
     "check:structure": "node scripts/check-structure.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."

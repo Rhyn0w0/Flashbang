@@ -1,0 +1,92 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "scripts": [
+    {
+      "name": "Install dependencies",
+      "command": "npm ci",
+      "icon": "configure"
+    },
+    {
+      "name": "Convex dev server",
+      "command": "npm run convex",
+      "icon": "play"
+    },
+    {
+      "name": "Web dev server",
+      "command": "npm run web -- --port 8081",
+      "icon": "play",
+      "previewUrl": "http://slopstudio:8081",
+      "autoOpenPreview": true
+    },
+    {
+      "name": "Expo dev server",
+      "command": "npm start",
+      "icon": "play"
+    },
+    {
+      "name": "Open iOS",
+      "command": "npm run ios",
+      "icon": "play"
+    },
+    {
+      "name": "Open Android",
+      "command": "npm run android",
+      "icon": "play"
+    },
+    {
+      "name": "Seed 50 test profiles",
+      "command": "npm run seed:profiles",
+      "icon": "configure"
+    },
+    {
+      "name": "Run tests",
+      "command": "npm test",
+      "icon": "test"
+    },
+    {
+      "name": "Verify Clerk auth",
+      "command": "npm run test:auth",
+      "icon": "test"
+    },
+    {
+      "name": "Typecheck",
+      "command": "npm run typecheck",
+      "icon": "test"
+    },
+    {
+      "name": "Lint",
+      "command": "npm run lint",
+      "icon": "lint"
+    },
+    {
+      "name": "Check import boundaries",
+      "command": "npm run check:structure",
+      "icon": "lint"
+    },
+    {
+      "name": "Format",
+      "command": "npm run format",
+      "icon": "lint"
+    },
+    {
+      "name": "Build web",
+      "command": "npm run build:web",
+      "icon": "build"
+    },
+    {
+      "name": "Generate Convex API",
+      "command": "npm run codegen --workspace @flashbang/backend",
+      "icon": "build"
+    },
+    {
+      "name": "Deploy Convex",
+      "command": "npm run deploy --workspace @flashbang/backend",
+      "icon": "build"
+    },
+    {
+      "name": "Convex CLI help",
+      "command": "npm run backend -- --help",
+      "icon": "debug"
+    }
+  ]
+}

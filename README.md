@@ -33,6 +33,12 @@ Convex stores deployment settings in `backend/.env.local`. Copy `frontend/.env.e
 
 If you have no Convex account, `npm run convex` offers a local, account-free deployment.
 
+To add 50 fictional adult profiles to the local deployment, keep Convex running and run
+`npm run seed:profiles`. Each has a different bio and is marked `(Test)` in Discover.
+The seed creates backing user records without Clerk accounts or photos. Running it again
+leaves existing test profiles untouched and does not create duplicates. The admin-only
+seed refuses to run on a cloud deployment.
+
 ## Set up Clerk sign-in
 
 This checkout is configured for the **Flashbang** Clerk development application. The Clerk CLI links it through the repository's git remote. The issuer is `https://crucial-mudfish-5798.clerk.accounts.dev`, and Convex runs locally. Start `npm run convex` and `npm start` in separate terminals. Local settings are in the ignored `backend/.env.local` and `frontend/.env.local` files.
