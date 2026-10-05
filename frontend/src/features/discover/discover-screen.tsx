@@ -62,7 +62,20 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <Screen>
+    <Screen
+      footer={
+        <>
+          <TextField
+            multiline
+            style={styles.comment}
+            value={body}
+            onChangeText={setBody}
+            placeholder="What do you think? Only you and the algorithm will ever read this."
+          />
+          <ErrorText error={error} />
+          <Button title="Next" onPress={submit} disabled={!body.trim()} loading={submitting} />
+        </>
+      }>
       <ProfileCard profile={next.profile} />
       {next.pick ? (
         <ThemedView type="backgroundElement" style={styles.reason}>
@@ -72,14 +85,6 @@ export default function DiscoverScreen() {
           <ThemedText type="small">{next.pick.reason}</ThemedText>
         </ThemedView>
       ) : null}
-      <TextField
-        multiline
-        value={body}
-        onChangeText={setBody}
-        placeholder="What do you think? Only you and the algorithm will ever read this."
-      />
-      <ErrorText error={error} />
-      <Button title="Next" onPress={submit} disabled={!body.trim()} loading={submitting} />
     </Screen>
   );
 }
@@ -87,5 +92,6 @@ export default function DiscoverScreen() {
 const styles = StyleSheet.create({
   center: { justifyContent: 'center', alignItems: 'center' },
   centerText: { textAlign: 'center' },
+  comment: { maxHeight: 160 },
   reason: { padding: Spacing.three, borderRadius: Spacing.three, gap: Spacing.half },
 });
