@@ -43,7 +43,7 @@ frontend/ios/
 frontend/android/
 
 # Vercel
-.vercel/
+.vercel
 
 # local env (keep only the template)
 .env*
