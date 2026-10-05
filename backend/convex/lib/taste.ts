@@ -3,6 +3,7 @@ import { tagLabel } from '../ai/tags';
 export type AnalyzedNote = { sentiment?: 'positive' | 'neutral' | 'negative'; tags?: string[] };
 
 const MAX_TRAITS = 5;
+export const COMMENT_HISTORY = 40;
 
 /**
  * Distils a user's analysed notes into the traits they respond to and the ones that put

@@ -19,6 +19,7 @@ import type * as lib_taste from "../lib/taste.js";
 import type * as photos from "../photos.js";
 import type * as picks from "../picks.js";
 import type * as profiles from "../profiles.js";
+import type * as seed from "../seed.js";
 import type * as sentiment from "../sentiment.js";
 import type * as users from "../users.js";
 
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   photos: typeof photos;
   picks: typeof picks;
   profiles: typeof profiles;
+  seed: typeof seed;
   sentiment: typeof sentiment;
   users: typeof users;
 }>;
