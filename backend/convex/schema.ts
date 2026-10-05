@@ -1,6 +1,22 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
+import { TAG_KEYS } from './ai/tags';
+
+export const tagSentimentValidator = v.object({
+  tag: v.union(...TAG_KEYS.map((tag) => v.literal(tag))),
+  sentiment: v.number(), // -1..1
+  confidence: v.number(), // 0..1, certainty of this comment's interpretation
+});
+
+export const tagPreferenceValidator = v.object({
+  ...tagSentimentValidator.fields,
+  evidenceWeight: v.number(),
+  weightedSentiment: v.number(),
+  weightedSquaredSentiment: v.number(),
+  commentCount: v.number(),
+});
+
 export const sentimentValidator = v.union(
   v.literal('positive'),
   v.literal('neutral'),
@@ -50,6 +66,7 @@ export default defineSchema({
     // Filled in by ai/analyzeComment after creation.
     sentiment: v.optional(sentimentValidator),
     tags: v.optional(v.array(v.string())),
+    tagSentiments: v.optional(v.array(tagSentimentValidator)),
     analyzedAt: v.optional(v.number()),
   })
     .index('by_author', ['authorId'])
@@ -66,14 +83,16 @@ export default defineSchema({
     refinedCount: v.optional(v.number()),
     refineClaimedCount: v.optional(v.number()),
     refineClaimedAt: v.optional(v.number()),
+    preferenceMigration: v.optional(v.union(v.literal('running'), v.literal('complete'))),
   }).index('by_user', ['userId']),
 
-  // What the model currently believes a user is looking for. Rebuilt from their comments.
+  // Cumulative preferences. Updated atomically when each comment's analysis is saved.
   tastes: defineTable({
     userId: v.id('users'),
     summary: v.string(),
     drawnTo: v.array(v.string()),
     putOffBy: v.array(v.string()),
+    preferences: v.optional(v.array(tagPreferenceValidator)),
     commentCount: v.number(),
     updatedAt: v.number(),
   }).index('by_user', ['userId']),

@@ -105,9 +105,11 @@ Routes import feature screens. Features use the shared UI components. The fronte
 
 1. Discover shows one profile. The user writes a note and taps Next.
 2. `comments.create` stores the note privately and schedules analysis.
-3. `ai/analyzeComment` asks Jev for sentiment and generic tags in one call. Tags need a yes probability of at least 0.6; at most six are kept. Saving analysis schedules ranking after 30 seconds.
-4. `ai/refinePicks` waits for analysis of the latest 40 notes. Positive and negative tag counts determine up to five preferred traits and five disliked traits. Jev scores up to 30 unseen active profiles against these traits and the latest 20 notes. Scores use four rubric levels, normalized to 0–1. Up to ten profiles rated at least "good fit" are saved, highest score first. Taste and picks are saved together; older results and duplicate runs cannot replace them.
-5. If the note was about a photo, the owner's sentiment summary is recomputed from counts only. "Likely matches" are commenters who appear in the owner's own picks above a threshold.
+3. `ai/analyzeComment` asks Jev for overall sentiment and an independent reaction to each of the 26 tags in one call. Each tag can be strongly liked, liked, neutral, disliked, strongly disliked, or unmentioned. Saving analysis updates the user's cumulative tag preferences immediately and schedules ranking after 30 seconds.
+4. Each tag preference has a sentiment from −1 to +1 and confidence from 0 to 1. More certain interpretations contribute more evidence. Agreement increases confidence; contradictory feedback lowers it. Unmentioned tags do not change, and unobserved tags start at zero sentiment with zero confidence. Picks displays the values for tags with evidence.
+5. `ai/refinePicks` waits for analysis of the latest 40 notes, then asks Jev to score up to 30 unseen active profiles using the cumulative preferences and the latest 20 notes. Scores use four rubric levels, normalized to 0–1. Up to ten profiles rated at least "good fit" are saved, highest score first. Older results and duplicate runs cannot replace newer picks. Failed ranking leaves preferences intact.
+6. Older analysed comments migrate in pages of 50 after the user's next comment is analysed, with no additional model calls. Their overall sentiment contributes weaker evidence because the original analysis did not distinguish reactions to individual tags.
+7. If the note was about a photo, the owner's sentiment summary is recomputed from counts only. "Likely matches" are commenters who appear in the owner's own picks above a threshold.
 
 Jev returns choices, scores, and probabilities. Code composes taste summaries, pick reasons, and photo feedback from those answers. The app never exposes raw comment text to other users. The backend sends comments directly to TypeSafe AI for analysis and ranking, with SDK logging disabled. The direct SDK has no documented per-request zero data retention option.
 

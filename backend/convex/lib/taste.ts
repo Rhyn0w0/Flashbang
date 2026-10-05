@@ -1,45 +1,81 @@
-import { tagLabel } from '../ai/tags';
+import type { Infer } from 'convex/values';
 
-export type AnalyzedNote = { sentiment?: 'positive' | 'neutral' | 'negative'; tags?: string[] };
+import { TAG_KEYS, tagLabel } from '../ai/tags';
+import type { tagPreferenceValidator, tagSentimentValidator } from '../schema';
+
+export type TagSentiment = Infer<typeof tagSentimentValidator>;
+export type TagPreference = Infer<typeof tagPreferenceValidator>;
 
 const MAX_TRAITS = 5;
+// Two fully certain comments' worth of evidence before confidence reaches halfway.
+const PRIOR_WEIGHT = 2;
 export const COMMENT_HISTORY = 40;
 
-/**
- * Distils a user's analysed notes into the traits they respond to and the ones that put
- * them off. Pure tag arithmetic: a tag counts toward "drawn to" when it appears in more
- * positive than negative notes, and vice versa.
- */
-export function deriveTaste(notes: AnalyzedNote[]) {
-  const positive = new Map<string, number>();
-  const negative = new Map<string, number>();
-  let analyzed = 0;
-  for (const note of notes) {
-    if (!note.sentiment || !note.tags) continue;
-    analyzed += 1;
-    const bucket =
-      note.sentiment === 'positive' ? positive : note.sentiment === 'negative' ? negative : null;
-    if (!bucket) continue;
-    for (const tag of note.tags) bucket.set(tag, (bucket.get(tag) ?? 0) + 1);
+type Taste = { preferences: TagPreference[]; commentCount: number };
+
+/** One update per analysed comment. Unmentioned tags retain their existing evidence. */
+export function deriveTaste(previous: Taste | undefined, observations: TagSentiment[]) {
+  const preferencesByTag = new Map(previous?.preferences.map((p) => [p.tag, p]));
+  for (const observation of observations) {
+    if (observation.confidence === 0) continue;
+    const existing = preferencesByTag.get(observation.tag) ?? emptyPreference(observation.tag);
+    const evidenceWeight = existing.evidenceWeight + observation.confidence;
+    const weightedSentiment =
+      existing.weightedSentiment + observation.sentiment * observation.confidence;
+    const weightedSquaredSentiment =
+      existing.weightedSquaredSentiment + observation.sentiment ** 2 * observation.confidence;
+    const sentiment = Math.max(-1, Math.min(1, weightedSentiment / evidenceWeight));
+    const variance = Math.max(0, weightedSquaredSentiment / evidenceWeight - sentiment ** 2);
+    // Agreement and evidence both matter. Opposite reactions reduce confidence;
+    // repeated explicit neutrality can still establish a confident neutral preference.
+    const confidence =
+      (evidenceWeight / (evidenceWeight + PRIOR_WEIGHT)) * Math.max(0, 1 - variance);
+    preferencesByTag.set(observation.tag, {
+      tag: observation.tag,
+      sentiment,
+      confidence,
+      evidenceWeight,
+      weightedSentiment,
+      weightedSquaredSentiment,
+      commentCount: existing.commentCount + 1,
+    });
   }
-
-  const rank = (own: Map<string, number>, other: Map<string, number>) =>
-    [...own.entries()]
-      .filter(([tag, count]) => count > (other.get(tag) ?? 0))
-      .sort((a, b) => b[1] - a[1])
+  const preferences = TAG_KEYS.map((tag) => preferencesByTag.get(tag) ?? emptyPreference(tag));
+  const rank = (direction: 1 | -1) =>
+    preferences
+      .filter((p) => p.sentiment * direction > 0 && p.confidence > 0)
+      .sort(
+        (a, b) => b.sentiment * direction * b.confidence - a.sentiment * direction * a.confidence
+      )
       .slice(0, MAX_TRAITS)
-      .map(([tag]) => tag);
+      .map((p) => p.tag);
+  const drawnTo = rank(1);
+  const putOffBy = rank(-1);
+  const commentCount = (previous?.commentCount ?? 0) + 1;
+  return {
+    preferences,
+    commentCount,
+    drawnTo,
+    putOffBy,
+    summary: describe(commentCount, drawnTo, putOffBy),
+  };
+}
 
-  const drawnTo = rank(positive, negative);
-  const putOffBy = rank(negative, positive);
-  return { drawnTo, putOffBy, summary: describe(analyzed, drawnTo, putOffBy) };
+function emptyPreference(tag: TagPreference['tag']): TagPreference {
+  return {
+    tag,
+    sentiment: 0,
+    confidence: 0,
+    evidenceWeight: 0,
+    weightedSentiment: 0,
+    weightedSquaredSentiment: 0,
+    commentCount: 0,
+  };
 }
 
 function describe(analyzed: number, drawnTo: string[], putOffBy: string[]) {
   if (drawnTo.length === 0 && putOffBy.length === 0) {
-    return analyzed === 0
-      ? 'Your notes are still being read. Check back in a moment.'
-      : 'No clear pattern yet. Keep leaving notes and this will sharpen.';
+    return 'No clear pattern yet. Keep leaving notes and this will sharpen.';
   }
   const list = (tags: string[]) => {
     const labels = tags.map(tagLabel);
@@ -48,9 +84,9 @@ function describe(analyzed: number, drawnTo: string[], putOffBy: string[]) {
       : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
   };
   const parts = [`From ${analyzed} ${analyzed === 1 ? 'note' : 'notes'}:`];
-  if (drawnTo.length > 0) parts.push(`you respond to ${list(drawnTo)}`);
+  if (drawnTo.length > 0) parts.push(`you seem drawn to ${list(drawnTo)}`);
   if (putOffBy.length > 0) {
-    parts.push(`${drawnTo.length > 0 ? 'and are' : 'you are'} put off by ${list(putOffBy)}`);
+    parts.push(`${drawnTo.length > 0 ? 'and' : 'you'} seem put off by ${list(putOffBy)}`);
   }
   return parts.join(' ') + '.';
 }

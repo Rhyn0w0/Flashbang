@@ -1,9 +1,18 @@
 import { v } from 'convex/values';
 
 import { internal } from './_generated/api';
-import { internalMutation, internalQuery, mutation, query } from './_generated/server';
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+} from './_generated/server';
+import type { Id } from './_generated/dataModel';
+import { isTag } from './ai/tags';
 import { requireUser } from './lib/auth';
-import { sentimentValidator } from './schema';
+import { deriveTaste, type TagSentiment } from './lib/taste';
+import { sentimentValidator, tagSentimentValidator } from './schema';
 
 const MAX_COMMENT_LENGTH = 1000;
 // Delay before re-ranking so a burst of comments costs one model run, not one per comment.
@@ -120,14 +129,101 @@ export const saveAnalysis = internalMutation({
   args: {
     commentId: v.id('comments'),
     sentiment: sentimentValidator,
-    tags: v.array(v.string()),
+    tagSentiments: v.array(tagSentimentValidator),
   },
-  handler: async (ctx, { commentId, sentiment, tags }) => {
+  handler: async (ctx, { commentId, sentiment, tagSentiments }) => {
+    const seen = new Set<string>();
+    for (const observation of tagSentiments) {
+      if (
+        !Number.isFinite(observation.sentiment) ||
+        observation.sentiment < -1 ||
+        observation.sentiment > 1 ||
+        !Number.isFinite(observation.confidence) ||
+        observation.confidence < 0 ||
+        observation.confidence > 1 ||
+        seen.has(observation.tag)
+      ) {
+        throw new Error('Invalid tag sentiment');
+      }
+      seen.add(observation.tag);
+    }
     const comment = await ctx.db.get(commentId);
     if (!comment || comment.analyzedAt !== undefined) return;
-    await ctx.db.patch(commentId, { sentiment, tags, analyzedAt: Date.now() });
+    await ctx.db.patch(commentId, {
+      sentiment,
+      tags: tagSentiments.map((observation) => observation.tag),
+      tagSentiments,
+      analyzedAt: Date.now(),
+    });
+    await updateTaste(ctx, comment.authorId, tagSentiments);
+
+    const stats = await ctx.db
+      .query('authorStats')
+      .withIndex('by_user', (q) => q.eq('userId', comment.authorId))
+      .unique();
+    if (stats && stats.preferenceMigration === undefined) {
+      await ctx.db.patch(stats._id, { preferenceMigration: 'running' });
+      await ctx.scheduler.runAfter(0, internal.comments.backfillTagPreferences, {
+        authorId: comment.authorId,
+        cursor: null,
+      });
+    }
     await ctx.scheduler.runAfter(REFINE_DELAY_MS, internal.ai.refinePicks.run, {
       userId: comment.authorId,
+    });
+  },
+});
+
+async function updateTaste(ctx: MutationCtx, userId: Id<'users'>, tagSentiments: TagSentiment[]) {
+  const existing = await ctx.db
+    .query('tastes')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .unique();
+  const previous = existing?.preferences
+    ? { preferences: existing.preferences, commentCount: existing.commentCount }
+    : undefined;
+  const row = { userId, ...deriveTaste(previous, tagSentiments), updatedAt: Date.now() };
+  if (existing) await ctx.db.patch(existing._id, row);
+  else await ctx.db.insert('tastes', row);
+}
+
+/** Adopt older analyses once, in bounded pages, without spending on new model calls. */
+export const backfillTagPreferences = internalMutation({
+  args: { authorId: v.id('users'), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { authorId, cursor }) => {
+    const stats = await ctx.db
+      .query('authorStats')
+      .withIndex('by_user', (q) => q.eq('userId', authorId))
+      .unique();
+    if (!stats || stats.preferenceMigration === 'complete') return;
+    const page = await ctx.db
+      .query('comments')
+      .withIndex('by_author', (q) => q.eq('authorId', authorId))
+      .paginate({ cursor, numItems: 50 });
+    for (const comment of page.page) {
+      if (!comment.sentiment || !comment.tags || comment.tagSentiments !== undefined) continue;
+      // Older notes have only an overall reaction. Give that coarse interpretation
+      // less weight than a fresh, independent per-tag judgment.
+      const sentiment =
+        comment.sentiment === 'positive' ? 0.5 : comment.sentiment === 'negative' ? -0.5 : 0;
+      const tagSentiments = [...new Set(comment.tags)].filter(isTag).map((tag) => ({
+        tag,
+        sentiment,
+        confidence: 0.25,
+      }));
+      await ctx.db.patch(comment._id, { tagSentiments });
+      await updateTaste(ctx, authorId, tagSentiments);
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.comments.backfillTagPreferences, {
+        authorId,
+        cursor: page.continueCursor,
+      });
+      return;
+    }
+    await ctx.db.patch(stats._id, { preferenceMigration: 'complete', refinedCount: undefined });
+    await ctx.scheduler.runAfter(REFINE_DELAY_MS, internal.ai.refinePicks.run, {
+      userId: authorId,
     });
   },
 });
