@@ -7,13 +7,13 @@ The primary difference from other dating apps is that, rather than showing you p
 
 ## Stack
 
-| Layer          | Choice                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------- |
-| App            | Expo SDK 57, Expo Router, React Native (iOS, Android, web)                               |
-| Backend        | Convex (database, file storage, scheduled actions)                                       |
-| Authentication | Clerk (hosted auth on mobile, Clerk sign-in component on web)                            |
+| Layer          | Choice                                                                             |
+| -------------- | ---------------------------------------------------------------------------------- |
+| App            | Expo SDK 57, Expo Router, React Native (iOS, Android, web)                         |
+| Backend        | Convex (database, file storage, scheduled actions)                                 |
+| Authentication | Clerk (hosted auth on mobile, Clerk sign-in component on web)                      |
 | AI             | [TypeSafe AI SDK](https://docs.typesafe.ai/sdk/javascript) with Jev (`jev-latest`) |
-| Web hosting    | Vercel, static export of the Expo web build                                              |
+| Web hosting    | Vercel, static export of the Expo web build                                        |
 
 ## Getting started
 
@@ -41,9 +41,9 @@ seed refuses to run on a cloud deployment.
 
 ## Set up Clerk sign-in
 
-This checkout is configured for the **Flashbang** Clerk development application. The Clerk CLI links it through the repository's git remote. The issuer is `https://crucial-mudfish-5798.clerk.accounts.dev`, and Convex runs locally. Start `npm run convex` and `npm start` in separate terminals. Local settings are in the ignored `backend/.env.local` and `frontend/.env.local` files.
+This project uses the **Flashbang** Clerk development application. The Clerk CLI links it through the repository's git remote. The issuer is `https://crucial-mudfish-5798.clerk.accounts.dev`. The hosted web app and cloud Convex deployments use this development instance. Start `npm run convex` and `npm start` in separate terminals. Local settings are in the ignored `backend/.env.local` and `frontend/.env.local` files.
 
-Email codes, passwords, and Google are enabled. Native API is enabled, the Android package `app.flashbang` is registered, and the hosted-auth callbacks `clerk://app.flashbang.hosted-callback` and `app.flashbang://callback` are allowed. Register the iOS app with your Apple App ID prefix and bundle identifier before creating a production build. Android passkeys also need the signing certificate fingerprint. Production Clerk and a cloud Convex deployment are not configured.
+Email codes, passwords, and Google are enabled. Native API is enabled, the Android package `app.flashbang` is registered, and the hosted-auth callbacks `clerk://app.flashbang.hosted-callback` and `app.flashbang://callback` are allowed. Register the iOS app with your Apple App ID prefix and bundle identifier before creating a production build. Android passkeys also need the signing certificate fingerprint. A production Clerk instance is not configured. Before launching publicly, configure one with a custom domain and update the corresponding publishable key and Convex issuer.
 
 For a new checkout or a different Clerk application:
 
@@ -115,25 +115,43 @@ Jev returns choices, scores, and probabilities. Code composes taste summaries, p
 
 ## Scripts
 
-| Script                         | What it does                                   |
-| ------------------------------ | ---------------------------------------------- |
-| `npm start`                    | Expo dev server                                |
-| `npm run convex`               | Convex dev server with live function reload    |
-| `npm run backend -- <command>` | Convex CLI in the backend workspace            |
-| `npm run build:web`            | Static web export to `frontend/dist/`          |
-| `npm run typecheck`            | Type checks across both workspaces             |
-| `npm test`                     | Native auth callback and AI matching regression tests             |
-| `npm run test:auth`            | Live Clerk and local Convex integration checks |
-| `npm run check:structure`      | Source imports and frontend/backend boundaries |
-| `npm run lint`                 | Expo ESLint rules across both workspaces       |
+| Script                         | What it does                                                 |
+| ------------------------------ | ------------------------------------------------------------ |
+| `npm start`                    | Expo dev server                                              |
+| `npm run convex`               | Convex dev server with live function reload                  |
+| `npm run backend -- <command>` | Convex CLI in the backend workspace                          |
+| `npm run build:web`            | Static web export to `frontend/dist/`                        |
+| `npm run build:vercel`         | Export web with the target Convex URL and deploy the backend |
+| `npm run typecheck`            | Type checks across both workspaces                           |
+| `npm test`                     | Native auth callback and AI matching regression tests        |
+| `npm run test:auth`            | Live Clerk and local Convex integration checks               |
+| `npm run check:structure`      | Source imports and frontend/backend boundaries               |
+| `npm run lint`                 | Expo ESLint rules across both workspaces                     |
 
 `npm run test:auth` requires a signed-in Clerk CLI, the configured development publishable key, and the local Convex server running. It creates temporary accounts, checks authentication, profile isolation, and photo ownership, then deletes its accounts, rows, and uploaded photo. It only targets the project-local Convex deployment and a Clerk development instance. It does not test browser interactions or AI matching. Set `TYPESAFE_API_KEY` on Convex before testing the AI loop.
 
 ## Deploying
 
-- **Web:** import the repo into Vercel. `vercel.json` sets the build command and output directory. Add `EXPO_PUBLIC_CONVEX_URL` pointing at your production Convex deployment and `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` for your production Clerk application.
+- **Web:** the Vercel project is `jude-edwards-team/flashbang`, connected to this repository with `main` as its production branch. The site is [flashbang-orpin.vercel.app](https://flashbang-orpin.vercel.app). Keep the root directory at the repository root and use Node 24. `vercel.json` runs `npm run build:vercel` and serves `frontend/dist`.
 - **Convex:** `npm run backend -- deploy`. Set `TYPESAFE_API_KEY` and `CLERK_JWT_ISSUER_DOMAIN` on the production deployment.
 - **iOS / Android:** run EAS Build from `frontend/` (`npx eas build`). Not configured yet.
+
+The cloud Convex project is [rhjno/flashbang](https://dashboard.convex.dev/t/rhjno/flashbang). Vercel production uses `precious-lemming-23`; previews and local development use `grandiose-bandicoot-578`. Previews share the development backend, so use test accounts there.
+
+Vercel stores separate `CONVEX_DEPLOY_KEY` secrets for production and preview. `build:vercel` selects the backend with that key, passes its URL to Expo as `EXPO_PUBLIC_CONVEX_URL`, exports the web app, and deploys the backend. Vercel also stores `EXPO_PUBLIC_CONVEX_URL` for each environment and `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`. Keep the Clerk issuer and publishable key on the same Clerk instance.
+
+The project defaults include a development and preview `TYPESAFE_API_KEY`. Defaults apply when creating new Convex deployments; changes do not update existing deployments. The development key is also set directly on `grandiose-bandicoot-578`. Production uses its own key: set `TYPESAFE_API_KEY` directly on `precious-lemming-23` to enable live matching. Never put either key in Vercel's public Expo variables.
+
+To connect another checkout after installing the [Vercel CLI](https://vercel.com/docs/cli), run these commands from the repository root:
+
+```bash
+vercel login
+vercel link --yes --scope jude-edwards-team --project flashbang
+vercel env pull frontend/.env.local --environment=development --yes
+npm run convex
+```
+
+Select the existing `rhjno/flashbang` cloud project when Convex asks. To deploy the current checkout manually, run `vercel deploy --prod`. Pushes to `main` deploy automatically after the deployment configuration is committed.
 
 ## Not done yet
 
