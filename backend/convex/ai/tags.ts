@@ -1,6 +1,6 @@
 /**
  * Fixed vocabulary of generic, non-identifying things a note can react to. Jev cannot
- * invent tags, so each comment is scored against every entry here as a yes/no question.
+ * invent tags, so each comment is judged against every entry here independently.
  * Keys double as display strings (hyphens become spaces).
  */
 export const TAGS = {
@@ -16,6 +16,18 @@ export const TAGS = {
   sincere: 'seeming genuine, honest, or down to earth',
   active: 'sports, fitness, or an active lifestyle',
   thoughtful: 'being curious, thoughtful, or well-read',
+  communication: 'communicating clearly, listening, or having good conversations',
+  reliable: 'being dependable, consistent, or following through',
+  'emotionally-open': 'sharing feelings or being emotionally available',
+  independent: 'having their own interests and being comfortable doing things alone',
+  affectionate: 'expressing affection or enjoying physical closeness',
+  introverted: 'preferring quiet time or smaller social settings',
+  sociable: 'enjoying meeting people, groups, or a busy social life',
+  spontaneous: 'enjoying unplanned activities or last-minute plans',
+  'family-oriented': 'valuing family relationships or wanting a family',
+  'long-term-relationship': 'explicitly wanting a committed, long-term relationship',
+  'casual-dating': 'explicitly wanting casual dating or a relationship without commitment',
+  pets: 'having pets or enjoying spending time with animals',
   'low-effort': 'the profile or photos feeling low effort',
   'showing-off': 'coming across as showing off or trying too hard',
 } as const;

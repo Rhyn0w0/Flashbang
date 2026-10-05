@@ -1,12 +1,12 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from 'convex-test';
+import type { FunctionArgs } from 'convex/server';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { api, internal } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import schema from '../convex/schema';
-import { deriveTaste } from '../convex/lib/taste';
 import { TAG_KEYS } from '../convex/ai/tags';
 
 const modules = import.meta.glob('../convex/**/*.{ts,js}');
@@ -83,22 +83,6 @@ test('candidate selection fills the pool with unseen active profiles', async () 
   expect(candidates.map((p) => p._id)).toEqual([freshId]);
 });
 
-test('taste balances positive and negative feedback and ignores pending notes', () => {
-  expect(
-    deriveTaste([
-      { sentiment: 'positive', tags: ['humor', 'warmth'] },
-      { sentiment: 'positive', tags: ['humor'] },
-      { sentiment: 'negative', tags: ['humor', 'showing-off'] },
-      { sentiment: 'neutral', tags: ['active'] },
-      { tags: ['active'] },
-    ])
-  ).toEqual({
-    drawnTo: ['humor', 'warmth'],
-    putOffBy: ['showing-off'],
-    summary: 'From 4 notes: you respond to humor and warmth and are put off by showing off.',
-  });
-});
-
 async function seedProfiles(t: ReturnType<typeof convexTest<typeof schema.tables>>) {
   return t.run(async (ctx) => {
     const userId = await ctx.db.insert('users', { tokenIdentifier: 'viewer' });
@@ -141,7 +125,15 @@ const analysisResponse = {
       probabilities: { positive: 0.95, neutral: 0.04, negative: 0.01 },
     },
     ...Object.fromEntries(
-      TAG_KEYS.map((tag) => [tag, { type: 'noul', noul: tag === 'humor' ? 0.9 : 0.1 }])
+      TAG_KEYS.map((tag) => [
+        tag,
+        {
+          type: 'choice',
+          choice: tag === 'humor' ? 'strong_positive' : 'not_mentioned',
+          confidence: 1,
+          probabilities: {},
+        },
+      ])
     ),
   },
   usage: { input_tokens: 100, output_tokens: 20 },
@@ -183,8 +175,11 @@ test('private comments produce a taste and ranked unseen picks through the direc
     drawnTo: ['humor'],
     putOffBy: [],
     commentCount: 1,
-    summary: 'From 1 note: you respond to humor.',
+    summary: 'From 1 note: you seem drawn to humor.',
   });
+  expect(
+    (await viewer.query(api.picks.taste))?.preferences?.find((p) => p.tag === 'humor')
+  ).toMatchObject({ sentiment: 1, confidence: 1 / 3, commentCount: 1 });
   const picks = await viewer.query(api.picks.list);
   expect(picks.map(({ profileId, score, reason }) => ({ profileId, score, reason }))).toEqual([
     { profileId: candidateIds[1], score: 1, reason: 'Shows humor, which you tend to respond to.' },
@@ -199,7 +194,11 @@ test('private comments produce a taste and ranked unseen picks through the direc
     []
   );
   expect(await viewer.query(api.comments.mine, {})).toMatchObject([
-    { sentiment: 'positive', tags: ['humor'] },
+    {
+      sentiment: 'positive',
+      tags: ['humor'],
+      tagSentiments: [{ tag: 'humor', sentiment: 1, confidence: 1 }],
+    },
   ]);
 
   await t.action(internal.ai.analyzeComment.run, { commentId });
@@ -212,6 +211,233 @@ test('private comments produce a taste and ranked unseen picks through the direc
   expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe(
     'Bearer test-key'
   );
+  expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).state.preferences).toEqual([
+    {
+      tag: 'humor',
+      description: 'being funny, witty, or joking around',
+      sentiment: 1,
+      confidence: 1 / 3,
+    },
+  ]);
+});
+
+test('Jev can like one quality and dislike another in the same otherwise positive note', async () => {
+  vi.useFakeTimers();
+  vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...analysisResponse,
+            answers: {
+              ...analysisResponse.answers,
+              'showing-off': {
+                type: 'choice',
+                choice: 'strong_negative',
+                confidence: 1,
+                probabilities: {},
+              },
+            },
+          })
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(rankingResponse)))
+  );
+  const t = convexTest(schema, modules);
+  const { sourceId } = await seedProfiles(t);
+  const viewer = t.withIdentity({ tokenIdentifier: 'viewer' });
+  await viewer.mutation(api.comments.create, {
+    targetProfileId: sourceId,
+    body: 'Love the humor, but hate the showing off.',
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  const taste = await viewer.query(api.picks.taste);
+  expect(taste?.preferences?.find((p) => p.tag === 'humor')).toMatchObject({
+    sentiment: 1,
+    confidence: 1 / 3,
+    commentCount: 1,
+  });
+  expect(taste?.preferences?.find((p) => p.tag === 'showing-off')).toMatchObject({
+    sentiment: -1,
+    confidence: 1 / 3,
+    commentCount: 1,
+  });
+  expect(taste?.preferences?.find((p) => p.tag === 'warmth')).toMatchObject({
+    sentiment: 0,
+    confidence: 0,
+    commentCount: 0,
+  });
+  expect(await t.withIdentity({ tokenIdentifier: 'source' }).query(api.picks.taste)).toBeNull();
+});
+
+test('each new comment updates stored preferences once, before ranking runs', async () => {
+  vi.useFakeTimers();
+  const t = convexTest(schema, modules);
+  const { sourceId } = await seedProfiles(t);
+  const viewer = t.withIdentity({ tokenIdentifier: 'viewer' });
+  const firstId = await viewer.mutation(api.comments.create, {
+    targetProfileId: sourceId,
+    body: 'Love humor',
+  });
+  const firstAnalysis = {
+    commentId: firstId,
+    sentiment: 'positive',
+    tagSentiments: [{ tag: 'humor', sentiment: 1, confidence: 1 }],
+  } satisfies FunctionArgs<typeof internal.comments.saveAnalysis>;
+  await t.mutation(internal.comments.saveAnalysis, firstAnalysis);
+  await t.mutation(internal.comments.saveAnalysis, firstAnalysis);
+  expect(
+    (await viewer.query(api.picks.taste))?.preferences?.find((p) => p.tag === 'humor')
+  ).toMatchObject({ sentiment: 1, confidence: 1 / 3, commentCount: 1 });
+  const secondId = await viewer.mutation(api.comments.create, {
+    targetProfileId: sourceId,
+    body: 'Actually I hate humor',
+  });
+  await t.mutation(internal.comments.saveAnalysis, {
+    commentId: secondId,
+    sentiment: 'negative',
+    tagSentiments: [{ tag: 'humor', sentiment: -1, confidence: 1 }],
+  });
+  expect(
+    (await viewer.query(api.picks.taste))?.preferences?.find((p) => p.tag === 'humor')
+  ).toMatchObject({ sentiment: 0, confidence: 0, commentCount: 2 });
+  expect((await viewer.query(api.picks.taste))?.commentCount).toBe(2);
+});
+
+test.for([
+  [{ tag: 'humor', sentiment: 2, confidence: 1 }],
+  [{ tag: 'humor', sentiment: 1, confidence: -0.1 }],
+  [{ tag: 'humor', sentiment: 1, confidence: 1.1 }],
+  [{ tag: 'humor', sentiment: Number.NaN, confidence: 1 }],
+  [
+    { tag: 'humor', sentiment: 1, confidence: 1 },
+    { tag: 'humor', sentiment: -1, confidence: 1 },
+  ],
+] satisfies FunctionArgs<typeof internal.comments.saveAnalysis>['tagSentiments'][])(
+  'invalid or duplicated tag evidence is rejected atomically: %j',
+  async (tagSentiments) => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const { sourceId } = await seedProfiles(t);
+    const viewer = t.withIdentity({ tokenIdentifier: 'viewer' });
+    const commentId = await viewer.mutation(api.comments.create, {
+      targetProfileId: sourceId,
+      body: 'Funny',
+    });
+    await expect(
+      t.mutation(internal.comments.saveAnalysis, {
+        commentId,
+        sentiment: 'positive',
+        tagSentiments,
+      })
+    ).rejects.toThrow('Invalid tag sentiment');
+    await t.mutation(internal.comments.saveAnalysis, {
+      commentId,
+      sentiment: 'positive',
+      tagSentiments: [{ tag: 'humor', sentiment: 1, confidence: 1 }],
+    });
+    expect(
+      (await viewer.query(api.picks.taste))?.preferences?.find((p) => p.tag === 'humor')
+    ).toMatchObject({ sentiment: 1, confidence: 1 / 3, commentCount: 1 });
+  }
+);
+
+test('bad Jev confidence fails analysis without preventing a valid retry', async () => {
+  vi.useFakeTimers();
+  vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...analysisResponse,
+            answers: {
+              ...analysisResponse.answers,
+              humor: {
+                type: 'choice',
+                choice: 'strong_positive',
+                confidence: 2,
+                probabilities: {},
+              },
+            },
+          })
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(analysisResponse)))
+  );
+  const t = convexTest(schema, modules);
+  const { sourceId } = await seedProfiles(t);
+  const viewer = t.withIdentity({ tokenIdentifier: 'viewer' });
+  const commentId = await viewer.mutation(api.comments.create, {
+    targetProfileId: sourceId,
+    body: 'Love the humor',
+  });
+  await expect(t.action(internal.ai.analyzeComment.run, { commentId })).rejects.toThrow(
+    'Invalid TypeSafe sentiment answer for tag humor'
+  );
+  await t.action(internal.ai.analyzeComment.run, { commentId });
+  expect(
+    (await viewer.query(api.picks.taste))?.preferences?.find((p) => p.tag === 'humor')
+  ).toMatchObject({ sentiment: 1, confidence: 1 / 3, commentCount: 1 });
+});
+
+test('legacy comments migrate across pages without model calls or duplicate evidence', async () => {
+  vi.useFakeTimers();
+  const t = convexTest(schema, modules);
+  const { userId, sourceId } = await seedProfiles(t);
+  await t.run(async (ctx) => {
+    await ctx.db.insert('authorStats', { userId, commentCount: 55 });
+    await ctx.db.insert('tastes', {
+      userId,
+      commentCount: 55,
+      drawnTo: ['humor'],
+      putOffBy: [],
+      summary: 'Old taste',
+      updatedAt: 1,
+    });
+    for (let i = 0; i < 55; i++) {
+      await ctx.db.insert('comments', {
+        authorId: userId,
+        targetProfileId: sourceId,
+        body: 'Funny',
+        sentiment: 'positive',
+        tags: ['humor', 'humor', 'unknown-old-tag'],
+        analyzedAt: 1,
+      });
+    }
+  });
+  const viewer = t.withIdentity({ tokenIdentifier: 'viewer' });
+  const commentId = await viewer.mutation(api.comments.create, {
+    targetProfileId: sourceId,
+    body: 'Still funny',
+  });
+  await t.mutation(internal.comments.saveAnalysis, {
+    commentId,
+    sentiment: 'positive',
+    tagSentiments: [{ tag: 'humor', sentiment: 1, confidence: 1 }],
+  });
+  await t.mutation(internal.comments.backfillTagPreferences, { authorId: userId, cursor: null });
+  expect(await t.mutation(internal.picks.claimRefine, { userId })).toBeNull();
+  const firstPage = await viewer.query(api.picks.taste);
+  expect(firstPage?.commentCount).toBe(51);
+  await t.mutation(internal.comments.backfillTagPreferences, { authorId: userId, cursor: null });
+  expect((await viewer.query(api.picks.taste))?.commentCount).toBe(51);
+  // Run only the queued zero-delay analysis and migration functions, not ranking.
+  await vi.advanceTimersByTimeAsync(0);
+  await t.finishInProgressScheduledFunctions();
+  const migrated = await viewer.query(api.picks.taste);
+  expect(migrated?.commentCount).toBe(56);
+  const preference = migrated?.preferences?.find((p) => p.tag === 'humor');
+  expect(preference?.commentCount).toBe(56);
+  expect(preference?.sentiment).toBeCloseTo(0.5338983051);
+  expect(preference?.evidenceWeight).toBe(14.75);
+  await t.mutation(internal.comments.backfillTagPreferences, { authorId: userId, cursor: null });
+  expect((await viewer.query(api.picks.taste))?.commentCount).toBe(56);
 });
 
 test('stale rankings cannot replace newer taste or picks', async () => {
@@ -237,7 +463,6 @@ test('stale rankings cannot replace newer taste or picks', async () => {
   await t.mutation(internal.picks.replaceAll, {
     userId,
     commentCount: 1,
-    taste: { summary: 'Old taste', drawnTo: ['humor'], putOffBy: [] },
     picks: [],
   });
   const viewer = t.withIdentity({ tokenIdentifier: 'viewer' });
@@ -261,15 +486,12 @@ test('a failed ranking releases its claim and leaves existing picks intact', asy
   );
   const t = convexTest(schema, modules);
   const { userId, sourceId, candidateIds } = await seedProfiles(t);
-  await t.run(async (ctx) => {
+  const commentId = await t.run(async (ctx) => {
     await ctx.db.insert('authorStats', { userId, commentCount: 1 });
-    await ctx.db.insert('comments', {
+    const commentId = await ctx.db.insert('comments', {
       authorId: userId,
       targetProfileId: sourceId,
       body: 'Funny',
-      sentiment: 'positive',
-      tags: ['humor'],
-      analyzedAt: 1,
     });
     await ctx.db.insert('picks', {
       userId,
@@ -277,10 +499,26 @@ test('a failed ranking releases its claim and leaves existing picks intact', asy
       score: 0.9,
       reason: 'Existing pick',
     });
+    return commentId;
   });
+  await t.mutation(internal.comments.saveAnalysis, {
+    commentId,
+    sentiment: 'positive',
+    tagSentiments: [{ tag: 'humor', sentiment: 1, confidence: 1 }],
+  });
+  await t.mutation(internal.comments.backfillTagPreferences, { authorId: userId, cursor: null });
   await expect(t.action(internal.ai.refinePicks.run, { userId })).rejects.toThrow();
   expect(await t.withIdentity({ tokenIdentifier: 'viewer' }).query(api.picks.list)).toMatchObject([
     { reason: 'Existing pick' },
   ]);
+  expect(
+    (await t.withIdentity({ tokenIdentifier: 'viewer' }).query(api.picks.taste))?.preferences?.find(
+      (p) => p.tag === 'humor'
+    )
+  ).toMatchObject({
+    sentiment: 1,
+    confidence: 1 / 3,
+    commentCount: 1,
+  });
   expect(await t.mutation(internal.picks.claimRefine, { userId })).toBe(1);
 });

@@ -13,6 +13,9 @@ export default function PicksScreen() {
   const user = useQuery(api.users.current);
   const taste = useQuery(api.picks.taste);
   const picks = useQuery(api.picks.list, user ? {} : 'skip');
+  const preferences = taste?.preferences
+    ?.filter((preference) => preference.commentCount > 0)
+    .sort((a, b) => b.confidence - a.confidence);
 
   if (user === undefined) return <Screen>{null}</Screen>;
   if (user === null) {
@@ -42,6 +45,29 @@ export default function PicksScreen() {
                 Put off by: {taste.putOffBy.join(', ')}
               </ThemedText>
             ) : null}
+            {preferences?.length ? (
+              <ThemedView type="backgroundElement" style={styles.preferences}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  −1 means dislike, +1 means like. Confidence reflects how much your notes agree.
+                </ThemedText>
+                {preferences.map((preference) => (
+                  <ThemedView
+                    type="backgroundElement"
+                    key={preference.tag}
+                    style={styles.preference}>
+                    <ThemedText type="small" style={styles.tag}>
+                      {preference.tag.replace(/-/g, ' ')}
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {preference.sentiment > 0 ? '+' : ''}
+                      {preference.sentiment.toFixed(2)}
+                      {' · '}
+                      {Math.round(preference.confidence * 100)}% confidence
+                    </ThemedText>
+                  </ThemedView>
+                ))}
+              </ThemedView>
+            ) : null}
           </>
         ) : (
           <ThemedText type="small" themeColor="textSecondary">
@@ -65,5 +91,13 @@ export default function PicksScreen() {
 const styles = StyleSheet.create({
   center: { justifyContent: 'center', alignItems: 'center' },
   taste: { padding: Spacing.three, borderRadius: Spacing.three, gap: Spacing.two },
+  preferences: { gap: Spacing.two, marginTop: Spacing.two },
+  preference: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: Spacing.one,
+  },
+  tag: { textTransform: 'capitalize' },
   pick: { gap: Spacing.two },
 });

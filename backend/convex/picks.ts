@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 
-import { internalMutation, query } from './_generated/server';
+import { internalMutation, internalQuery, query } from './_generated/server';
 import { currentUser, requireUser } from './lib/auth';
 import { COMMENT_HISTORY } from './lib/taste';
 import { publicProfile } from './profiles';
@@ -93,6 +93,15 @@ export const taste = query({
   },
 });
 
+export const tasteForUser = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) =>
+    ctx.db
+      .query('tastes')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique(),
+});
+
 /**
  * Atomically claim the right to rebuild picks for the author's current comment count.
  * Returns the count to build from, or null when there is nothing new, another run already
@@ -108,6 +117,7 @@ export const claimRefine = internalMutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .unique();
     if (!stats || stats.commentCount === 0) return null;
+    if (stats.preferenceMigration === 'running') return null;
     const history = await ctx.db
       .query('comments')
       .withIndex('by_author', (q) => q.eq('authorId', userId))
@@ -150,16 +160,11 @@ export const replaceAll = internalMutation({
   args: {
     userId: v.id('users'),
     commentCount: v.number(),
-    taste: v.object({
-      summary: v.string(),
-      drawnTo: v.array(v.string()),
-      putOffBy: v.array(v.string()),
-    }),
     picks: v.array(
       v.object({ profileId: v.id('profiles'), score: v.number(), reason: v.string() })
     ),
   },
-  handler: async (ctx, { userId, commentCount, taste, picks }) => {
+  handler: async (ctx, { userId, commentCount, picks }) => {
     const stats = await ctx.db
       .query('authorStats')
       .withIndex('by_user', (q) => q.eq('userId', userId))
@@ -177,13 +182,6 @@ export const replaceAll = internalMutation({
         ctx.db.insert('picks', { userId, ...p, seenAt: seen.get(p.profileId) ?? undefined })
       )
     );
-    const existingTaste = await ctx.db
-      .query('tastes')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .unique();
-    const row = { userId, commentCount, ...taste, updatedAt: Date.now() };
-    if (existingTaste) await ctx.db.patch(existingTaste._id, row);
-    else await ctx.db.insert('tastes', row);
     await ctx.db.patch(stats._id, { refinedCount: commentCount });
   },
 });
