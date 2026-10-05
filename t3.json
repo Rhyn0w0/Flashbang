@@ -2,9 +2,11 @@
   "$schema": "https://t3.codes/schema/t3.json",
   "scripts": [
     {
-      "name": "Install dependencies",
-      "command": "npm ci",
-      "icon": "configure"
+      "name": "Set up worktree",
+      "command": "npm run setup:worktree",
+      "icon": "configure",
+      "runOnWorktreeCreate": true,
+      "async": false
     },
     {
       "name": "Convex dev server",

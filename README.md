@@ -33,6 +33,22 @@ Convex stores deployment settings in `backend/.env.local`. Copy `frontend/.env.e
 
 If you have no Convex account, `npm run convex` offers a local, account-free deployment.
 
+## Set up a worktree
+
+Run `npm run setup:worktree` from a new worktree. T3 Code runs this command automatically when it creates a worktree and waits for setup to finish.
+
+Setup requires Node.js 22.13 or later and signed-in Vercel, Clerk, and Convex CLIs. Run `vercel login`, `clerk auth login`, and `npm run backend -- login` if needed. Install dependencies with `npm ci` before using the Convex login command.
+
+The script finds the checkout on the local `main` branch, installs dependencies with `npm ci`, and links `jude-edwards-team/flashbang` through the Vercel CLI. It keeps an existing `frontend/.env.local`. Otherwise, it copies that file from main or pulls Vercel's development variables if main has no file. To use a different source checkout, run:
+
+```bash
+	npm run setup:worktree -- --main-worktree /path/to/Flashbang
+```
+
+Each worktree gets its own local Convex database in `backend/.convex/`. Convex imports the project's default development environment variables, including `TYPESAFE_API_KEY`. Setup gets the issuer for the matching development application through the Clerk CLI and sets `CLERK_JWT_ISSUER_DOMAIN` on the local backend. It deploys the worktree's functions once and points `EXPO_PUBLIC_CONVEX_URL` at this local backend. Rerunning setup keeps the existing database and frontend settings while updating the backend URL.
+
+After setup, run `npm run convex` in one terminal and `npm start` in another. To populate the local database with test profiles, run `npm run seed:profiles` while Convex is running.
+
 To add 50 fictional adult profiles to the local deployment, keep Convex running and run
 `npm run seed:profiles`. Each has a different bio and is marked `(Test)` in Discover.
 The seed creates backing user records without Clerk accounts or photos. Running it again
