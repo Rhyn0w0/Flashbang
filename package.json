@@ -12,6 +12,7 @@
     "ios": "npm run ios --workspace @flashbang/frontend --",
     "web": "npm run web --workspace @flashbang/frontend --",
     "build:web": "npm run build:web --workspace @flashbang/frontend --",
+    "build:vercel": "npm run backend -- deploy --cmd 'npm --prefix .. run build:web' --cmd-url-env-var-name EXPO_PUBLIC_CONVEX_URL",
     "convex": "npm run dev --workspace @flashbang/backend --",
     "backend": "npm exec --workspace @flashbang/backend -- convex",
     "typecheck": "npm run typecheck --workspaces --if-present",
